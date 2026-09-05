@@ -63,6 +63,7 @@ class SceneObject(BaseModel):
     path_relevance: PathRelevance = PathRelevance.NONE
     specialized: bool = False
     track_id: Optional[int] = None
+    relationships: list[str] = Field(default_factory=list)
 
 
 class PathObstacle(BaseModel):

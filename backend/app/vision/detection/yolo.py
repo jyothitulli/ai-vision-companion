@@ -11,8 +11,26 @@ from app.vision.interfaces import ObjectDetector, RawDetection
 logger = logging.getLogger(__name__)
 
 
+# Class-calibrated minimum confidence thresholds.
+# Small personal items (phones, bottles, cups) have lower feature activation
+# in full-scene captures, so a rigid 0.35 threshold drops them.
+CLASS_CONFIDENCE_OVERRIDES: dict[str, float] = {
+    "cell phone": 0.20,
+    "phone": 0.20,
+    "bottle": 0.22,
+    "cup": 0.22,
+    "mouse": 0.20,
+    "remote": 0.22,
+    "book": 0.24,
+    "laptop": 0.25,
+    "backpack": 0.28,
+    "handbag": 0.28,
+    "suitcase": 0.28,
+}
+
+
 class YOLODetector(ObjectDetector):
-    """Ultralytics YOLO closed-set detector. Weights are replaceable via config."""
+    """Ultralytics YOLO closed-set detector with class-calibrated confidence."""
 
     def __init__(self, settings: Settings):
         from ultralytics import YOLO
@@ -26,9 +44,11 @@ class YOLODetector(ObjectDetector):
         logger.info("yolo_loaded", extra={"model": settings.yolo_model, "device": settings.device})
 
     def detect(self, image: np.ndarray) -> list[RawDetection]:
+        # Predict with lower baseline threshold to capture small candidate objects
+        scan_conf = min(0.18, self._confidence)
         results = self._model.predict(
             image,
-            conf=self._confidence,
+            conf=scan_conf,
             device=self._device,
             verbose=False,
         )
@@ -41,12 +61,20 @@ class YOLODetector(ObjectDetector):
         if boxes is None:
             return detections
         for box in boxes:
-            xyxy = box.xyxy[0].tolist()
             cls_id = int(box.cls[0].item())
+            class_name = str(names.get(cls_id, cls_id))
+            conf = float(box.conf[0].item())
+            
+            # Apply class-specific calibrated threshold
+            required_conf = CLASS_CONFIDENCE_OVERRIDES.get(class_name.lower(), self._confidence)
+            if conf < required_conf:
+                continue
+
+            xyxy = box.xyxy[0].tolist()
             detections.append(
                 RawDetection(
-                    class_name=str(names.get(cls_id, cls_id)),
-                    confidence=float(box.conf[0].item()),
+                    class_name=class_name,
+                    confidence=conf,
                     bbox_xyxy=(float(xyxy[0]), float(xyxy[1]), float(xyxy[2]), float(xyxy[3])),
                     track_id=int(box.id[0].item()) if box.id is not None else None,
                 )
@@ -54,9 +82,10 @@ class YOLODetector(ObjectDetector):
         return detections
 
     def track(self, image: np.ndarray) -> list[RawDetection]:
+        scan_conf = min(0.18, self._confidence)
         results = self._model.track(
             image,
-            conf=self._confidence,
+            conf=scan_conf,
             device=self._device,
             verbose=False,
             persist=True,
@@ -71,20 +100,31 @@ class YOLODetector(ObjectDetector):
         if boxes is None:
             return detections
         for box in boxes:
-            xyxy = box.xyxy[0].tolist()
             cls_id = int(box.cls[0].item())
+            class_name = str(names.get(cls_id, cls_id))
+            conf = float(box.conf[0].item())
+
+            required_conf = CLASS_CONFIDENCE_OVERRIDES.get(class_name.lower(), self._confidence)
+            if conf < required_conf:
+                continue
+
+            xyxy = box.xyxy[0].tolist()
             track_id = None
             if box.id is not None:
                 track_id = int(box.id[0].item())
             detections.append(
                 RawDetection(
-                    class_name=str(names.get(cls_id, cls_id)),
-                    confidence=float(box.conf[0].item()),
+                    class_name=class_name,
+                    confidence=conf,
                     bbox_xyxy=(float(xyxy[0]), float(xyxy[1]), float(xyxy[2]), float(xyxy[3])),
                     track_id=track_id,
                 )
             )
         return detections
+
+
+# Alias for explicit multi-model detector architecture
+COCOObjectDetector = YOLODetector
 
 
 class YOLOWorldFinder(ObjectDetector):

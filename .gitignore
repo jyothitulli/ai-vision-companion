@@ -88,3 +88,6 @@ evaluation/reports/*.html
 # Dataset images (keep structure, never private images)
 datasets/**/images/
 !datasets/**/images/.gitkeep
+
+# Scratch and test workspace
+scratch/

@@ -45,7 +45,59 @@ class SpatialReasoningEngine:
                     }
                 )
             )
-        return enriched
+
+        # Compute object-to-object spatial relationships
+        relationships_by_id = self.compute_relationships(enriched)
+        final_objects: list[SceneObject] = []
+        for obj in enriched:
+            rels = relationships_by_id.get(obj.id, [])
+            final_objects.append(obj.model_copy(update={"relationships": rels}))
+        return final_objects
+
+    def compute_relationships(self, objects: list[SceneObject]) -> dict[int, list[str]]:
+        """Compute grounded spatial relationships between detected objects."""
+        relationships: dict[int, list[str]] = {obj.id: [] for obj in objects}
+        surface_types = {"dining table", "table", "desk", "bench", "chair", "bed", "couch"}
+
+        for i, obj_a in enumerate(objects):
+            cx_a = obj_a.bbox.x + obj_a.bbox.width / 2
+            cy_a = obj_a.bbox.y + obj_a.bbox.height / 2
+            bot_a = obj_a.bbox.y + obj_a.bbox.height
+
+            for j, obj_b in enumerate(objects):
+                if i == j:
+                    continue
+                type_b = obj_b.type.lower()
+                cx_b = obj_b.bbox.x + obj_b.bbox.width / 2
+                cy_b = obj_b.bbox.y + obj_b.bbox.height / 2
+
+                # 1. Surface support check (e.g. phone on table, cup on desk)
+                if type_b in surface_types and obj_a.type.lower() not in surface_types:
+                    x_overlap = (
+                        obj_b.bbox.x <= cx_a <= (obj_b.bbox.x + obj_b.bbox.width)
+                    )
+                    y_support = (
+                        obj_b.bbox.y - 0.05 <= bot_a <= (obj_b.bbox.y + obj_b.bbox.height * 0.85)
+                    )
+                    if x_overlap and y_support:
+                        rel = f"on the {obj_b.type}"
+                        if rel not in relationships[obj_a.id]:
+                            relationships[obj_a.id].append(rel)
+
+                # 2. Horizontal proximity check (beside / left / right)
+                # Objects close horizontally within same depth band
+                if obj_a.distance_band == obj_b.distance_band and obj_a.distance_band != DistanceBand.UNKNOWN:
+                    dx = cx_a - cx_b
+                    dy = abs(cy_a - cy_b)
+                    if 0.05 < abs(dx) < 0.28 and dy < 0.30:
+                        if dx < 0:
+                            rel = f"to the left of {obj_b.type}"
+                        else:
+                            rel = f"to the right of {obj_b.type}"
+                        if rel not in relationships[obj_a.id] and len(relationships[obj_a.id]) < 2:
+                            relationships[obj_a.id].append(rel)
+
+        return relationships
 
     def classify_position(self, cx_norm: float) -> HorizontalPosition:
         if cx_norm < 0.33:

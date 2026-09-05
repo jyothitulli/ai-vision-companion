@@ -11,7 +11,9 @@ from app.config import Settings
 from app.ocr.provider import OCRProvider, build_ocr_provider
 from app.reasoning.nlg import Intent, IntentParser, ResponseGenerator
 from app.vision.depth.depth_anything import DepthAnythingEstimator, UnavailableDepthEstimator
-from app.vision.detection.yolo import YOLODetector, YOLOWorldFinder
+from app.vision.detection.fusion import DetectionFusion
+from app.vision.detection.open_vocab import OpenVocabularyDetector
+from app.vision.detection.yolo import COCOObjectDetector, YOLODetector, YOLOWorldFinder
 from app.vision.hazards.prioritizer import EventPrioritizer
 from app.vision.interfaces import DepthEstimator, ObjectDetector, OCRDocument
 from app.vision.path.analyzer import PathAnalyzer
@@ -77,9 +79,14 @@ class VisionRuntime:
     nlg: ResponseGenerator
     intents: IntentParser
     ocr: Optional[OCRProvider]
-    finder: Optional[YOLOWorldFinder]
+    finder: Optional[ObjectDetector]
     specialized: HeuristicSpecializedDetector
     settings: Settings
+    fusion: Optional[DetectionFusion] = None
+
+    def __post_init__(self):
+        if self.fusion is None:
+            self.fusion = DetectionFusion(iou_threshold=0.45)
 
 
 def build_runtime(settings: Settings) -> VisionRuntime:
@@ -94,7 +101,9 @@ def build_runtime(settings: Settings) -> VisionRuntime:
     finder = None
     if settings.enable_yolo_world:
         try:
-            finder = YOLOWorldFinder(settings)
+            finder = OpenVocabularyDetector(settings)
+            if not finder.is_available:
+                finder = YOLOWorldFinder(settings)
         except Exception:
             finder = None
     ocr = None
@@ -116,6 +125,7 @@ def build_runtime(settings: Settings) -> VisionRuntime:
         ocr=ocr,
         finder=finder,
         specialized=HeuristicSpecializedDetector(),
+        fusion=DetectionFusion(iou_threshold=0.45),
         settings=settings,
     )
 
@@ -145,7 +155,21 @@ class VisionPipeline:
         latencies["detection_ms"] = (time.perf_counter() - t0) * 1000
 
         specialized = self.runtime.specialized.from_general_detections(detections)
-        detections = detections + specialized
+        detector_outputs = [detections, specialized]
+
+        if intent.mode == "find" and intent.target and self.runtime.finder is not None:
+            t_find = time.perf_counter()
+            try:
+                if hasattr(self.runtime.finder, "set_classes"):
+                    self.runtime.finder.set_classes([intent.target, *self._aliases(intent.target)])
+                extra = self.runtime.finder.detect(image)
+                detector_outputs.append(extra)
+            except Exception:
+                warnings.append("open_vocab_unavailable")
+            latencies["open_vocab_ms"] = (time.perf_counter() - t_find) * 1000
+
+        # Multi-model detection fusion with duplicate suppression
+        detections = self.runtime.fusion.fuse(detector_outputs)
 
         t1 = time.perf_counter()
         depth_map = None
@@ -168,18 +192,6 @@ class VisionPipeline:
         objects = moved
         objects = normalize_boxes(objects, image)
         objects = self.runtime.spatial.enrich(objects, depth_map, image.shape)
-
-        if intent.mode == "find" and intent.target and self.runtime.finder is not None:
-            t_find = time.perf_counter()
-            try:
-                self.runtime.finder.set_classes([intent.target, *self._aliases(intent.target)])
-                extra = self.runtime.finder.detect(image)
-                extra_objects = raw_to_objects(extra, image)
-                extra_objects = self.runtime.spatial.enrich(extra_objects, depth_map, image.shape)
-                objects.extend(extra_objects)
-            except Exception:
-                warnings.append("open_vocab_unavailable")
-            latencies["open_vocab_ms"] = (time.perf_counter() - t_find) * 1000
 
         path = self.runtime.path.analyze(objects)
         scene = self.runtime.scene.understand(objects)
