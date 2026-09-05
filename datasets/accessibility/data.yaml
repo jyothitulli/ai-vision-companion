@@ -1,0 +1,16 @@
+path: .
+train: train/images
+val: validation/images
+test: testing/images
+
+names:
+  0: stairs
+  1: ramp
+  2: curb
+  3: pothole
+  4: blocked_walkway
+  5: door
+  6: elevator
+  7: pedestrian_crossing
+  8: traffic_signal
+  9: tactile_paving

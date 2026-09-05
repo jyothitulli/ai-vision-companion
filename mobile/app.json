@@ -1,0 +1,41 @@
+{
+  "expo": {
+    "name": "Vision Companion",
+    "slug": "vision-companion",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "splash": {
+      "backgroundColor": "#0B0F14"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Vision Companion uses the camera to describe your surroundings.",
+        "NSMicrophoneUsageDescription": "Vision Companion uses the microphone so you can ask questions by voice."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0B0F14"
+      },
+      "permissions": ["CAMERA", "RECORD_AUDIO", "INTERNET"]
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Vision Companion to use the camera to describe your surroundings."
+        }
+      ],
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Allow Vision Companion to use the microphone for voice commands."
+        }
+      ]
+    ]
+  }
+}

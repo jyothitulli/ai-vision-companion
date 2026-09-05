@@ -1,0 +1,131 @@
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+
+import numpy as np
+
+from app.config import Settings
+from app.vision.interfaces import ObjectDetector, RawDetection
+
+logger = logging.getLogger(__name__)
+
+
+class YOLODetector(ObjectDetector):
+    """Ultralytics YOLO closed-set detector. Weights are replaceable via config."""
+
+    def __init__(self, settings: Settings):
+        from ultralytics import YOLO
+
+        weights = Path(settings.yolo_model)
+        if not weights.is_file():
+            weights = settings.weights_dir / Path(settings.yolo_model).name
+        self._model = YOLO(str(weights) if weights.is_file() else settings.yolo_model)
+        self._confidence = settings.yolo_confidence
+        self._device = settings.device
+        logger.info("yolo_loaded", extra={"model": settings.yolo_model, "device": settings.device})
+
+    def detect(self, image: np.ndarray) -> list[RawDetection]:
+        results = self._model.predict(
+            image,
+            conf=self._confidence,
+            device=self._device,
+            verbose=False,
+        )
+        detections: list[RawDetection] = []
+        if not results:
+            return detections
+        result = results[0]
+        names = result.names
+        boxes = result.boxes
+        if boxes is None:
+            return detections
+        for box in boxes:
+            xyxy = box.xyxy[0].tolist()
+            cls_id = int(box.cls[0].item())
+            detections.append(
+                RawDetection(
+                    class_name=str(names.get(cls_id, cls_id)),
+                    confidence=float(box.conf[0].item()),
+                    bbox_xyxy=(float(xyxy[0]), float(xyxy[1]), float(xyxy[2]), float(xyxy[3])),
+                    track_id=int(box.id[0].item()) if box.id is not None else None,
+                )
+            )
+        return detections
+
+    def track(self, image: np.ndarray) -> list[RawDetection]:
+        results = self._model.track(
+            image,
+            conf=self._confidence,
+            device=self._device,
+            verbose=False,
+            persist=True,
+            tracker="bytetrack.yaml",
+        )
+        detections: list[RawDetection] = []
+        if not results:
+            return detections
+        result = results[0]
+        names = result.names
+        boxes = result.boxes
+        if boxes is None:
+            return detections
+        for box in boxes:
+            xyxy = box.xyxy[0].tolist()
+            cls_id = int(box.cls[0].item())
+            track_id = None
+            if box.id is not None:
+                track_id = int(box.id[0].item())
+            detections.append(
+                RawDetection(
+                    class_name=str(names.get(cls_id, cls_id)),
+                    confidence=float(box.conf[0].item()),
+                    bbox_xyxy=(float(xyxy[0]), float(xyxy[1]), float(xyxy[2]), float(xyxy[3])),
+                    track_id=track_id,
+                )
+            )
+        return detections
+
+
+class YOLOWorldFinder(ObjectDetector):
+    """Open-vocabulary detector used for FIND OBJECT queries."""
+
+    def __init__(self, settings: Settings):
+        from ultralytics import YOLO
+
+        self._model = YOLO(settings.yolo_world_model)
+        self._confidence = max(0.15, settings.yolo_confidence - 0.1)
+        self._device = settings.device
+        self._classes: list[str] = []
+
+    def set_classes(self, classes: list[str]) -> None:
+        self._classes = classes
+        self._model.set_classes(classes)
+
+    def detect(self, image: np.ndarray) -> list[RawDetection]:
+        if not self._classes:
+            return []
+        results = self._model.predict(
+            image,
+            conf=self._confidence,
+            device=self._device,
+            verbose=False,
+        )
+        detections: list[RawDetection] = []
+        if not results:
+            return detections
+        result = results[0]
+        names = result.names
+        if result.boxes is None:
+            return detections
+        for box in result.boxes:
+            xyxy = box.xyxy[0].tolist()
+            cls_id = int(box.cls[0].item())
+            detections.append(
+                RawDetection(
+                    class_name=str(names.get(cls_id, cls_id)),
+                    confidence=float(box.conf[0].item()),
+                    bbox_xyxy=(float(xyxy[0]), float(xyxy[1]), float(xyxy[2]), float(xyxy[3])),
+                )
+            )
+        return detections

@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vision Companion — Assistive Multimodal AI</title>
+  <style>
+    :root {
+      --bg: #0a0e17;
+      --surface: #141b2d;
+      --surface-elevated: #1e2942;
+      --accent: #ffd600;
+      --accent-hover: #ffea00;
+      --cyan: #00e5ff;
+      --text: #ffffff;
+      --text-secondary: #cbd5e1;
+      --muted: #94a3b8;
+      --danger: #ff5252;
+      --success: #00e676;
+      --warning: #ff9100;
+      --border: #334155;
+      --border-accent: #ffd600;
+      --font-stack: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: var(--font-stack);
+      line-height: 1.5;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 16px;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 720px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 2px solid var(--border);
+      padding-bottom: 12px;
+    }
+
+    .title {
+      font-size: 26px;
+      font-weight: 900;
+      letter-spacing: 1.2px;
+      color: var(--accent);
+      text-transform: uppercase;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
+      border-radius: 9999px;
+      font-size: 13px;
+      font-weight: 700;
+      background: var(--surface-elevated);
+      border: 1px solid var(--border);
+    }
+    .badge.connected { color: var(--success); border-color: var(--success); }
+    .badge.disconnected { color: var(--danger); border-color: var(--danger); }
+    .badge-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    /* Listening Status Banner */
+    .status-banner {
+      background: var(--surface);
+      border: 2px solid var(--accent);
+      border-radius: 12px;
+      padding: 14px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .status-banner .label {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--muted);
+      letter-spacing: 0.8px;
+    }
+    .status-banner .state {
+      font-size: 20px;
+      font-weight: 900;
+      color: var(--accent);
+    }
+    .state.LISTENING { color: var(--cyan); }
+    .state.CONTINUOUS_ASSISTANCE { color: var(--success); }
+    .state.PROCESSING, .state.CAPTURING { color: var(--warning); }
+    .state.ERROR { color: var(--danger); }
+
+    /* Viewport / Camera Box */
+    .viewport-card {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 4 / 3;
+      background: #000;
+      border-radius: 16px;
+      overflow: hidden;
+      border: 2px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #videoElement {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    #overlayCanvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+    .camera-placeholder {
+      position: absolute;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      color: var(--muted);
+      text-align: center;
+      padding: 20px;
+    }
+    .camera-placeholder svg {
+      width: 48px;
+      height: 48px;
+      stroke: currentColor;
+    }
+
+    /* Spoken Answer Display */
+    .answer-card {
+      background: var(--surface);
+      border: 2px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .answer-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .answer-header span {
+      font-size: 13px;
+      font-weight: 800;
+      color: var(--muted);
+      letter-spacing: 0.5px;
+    }
+    .answer-text {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.45;
+    }
+    .meta-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      font-size: 12px;
+    }
+    .meta-tag {
+      background: var(--surface-elevated);
+      padding: 3px 8px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+    }
+    .meta-tag.path-clear { color: var(--success); border-color: var(--success); }
+    .meta-tag.path-blocked { color: var(--danger); border-color: var(--danger); }
+    .meta-tag.path-partially_blocked { color: var(--warning); border-color: var(--warning); }
+
+    /* Controls Grid */
+    .controls-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    @media (max-width: 480px) {
+      .controls-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    .btn {
+      min-height: 62px;
+      border-radius: 12px;
+      background: var(--surface);
+      border: 2.5px solid var(--accent);
+      color: var(--text);
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      cursor: pointer;
+      padding: 10px 16px;
+      transition: all 0.15s ease-in-out;
+      user-select: none;
+    }
+    .btn:hover {
+      background: var(--surface-elevated);
+      border-color: var(--accent-hover);
+      transform: translateY(-1px);
+    }
+    .btn:active {
+      transform: translateY(1px);
+    }
+    .btn:focus-visible {
+      outline: 4px solid var(--cyan);
+      outline-offset: 2px;
+    }
+    .btn.active-mode {
+      background: var(--accent);
+      color: #000;
+      border-color: var(--accent);
+    }
+    .btn-full {
+      grid-column: 1 / -1;
+    }
+    .btn-stop-speech {
+      min-height: 48px;
+      background: transparent;
+      border: 1.5px dashed var(--muted);
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .btn-stop-speech:hover {
+      border-color: var(--text);
+      color: var(--text);
+    }
+
+    /* Modal / Dialog */
+    .modal-backdrop {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(4px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      z-index: 100;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+    }
+    .modal-backdrop.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .modal-content {
+      background: var(--surface);
+      border: 2px solid var(--accent);
+      border-radius: 16px;
+      padding: 24px;
+      width: 100%;
+      max-width: 480px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .modal-title {
+      font-size: 20px;
+      font-weight: 800;
+      color: var(--accent);
+    }
+    .input-text {
+      background: var(--bg);
+      border: 2px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-size: 16px;
+      color: #fff;
+      font-family: inherit;
+    }
+    .input-text:focus {
+      outline: 2px solid var(--accent);
+      border-color: var(--accent);
+    }
+    .quick-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .chip {
+      background: var(--surface-elevated);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 6px 14px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      color: var(--text-secondary);
+    }
+    .chip:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .modal-actions {
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+    }
+    .btn-secondary {
+      background: var(--surface-elevated);
+      border: 2px solid var(--border);
+      color: var(--text-secondary);
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .btn-primary {
+      background: var(--accent);
+      border: 2px solid var(--accent);
+      color: #000;
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    /* Fallback upload strip */
+    .upload-strip {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      background: var(--surface);
+      border-radius: 8px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .upload-strip input[type="file"] {
+      display: none;
+    }
+    .upload-label {
+      cursor: pointer;
+      color: var(--cyan);
+      font-weight: 700;
+      text-decoration: underline;
+    }
+
+    /* Safety footer */
+    footer {
+      margin-top: 24px;
+      text-align: center;
+      font-size: 12px;
+      color: var(--muted);
+      border-top: 1px solid var(--border);
+      padding-top: 12px;
+      width: 100%;
+      max-width: 720px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1 class="title">Vision Companion</h1>
+      <div id="backendBadge" class="badge disconnected" aria-live="polite">
+        <span class="badge-dot"></span>
+        <span id="backendStatusText">Connecting...</span>
+      </div>
+    </header>
+
+    <!-- State banner -->
+    <section class="status-banner" aria-live="polite">
+      <div>
+        <div class="label">LISTENING STATUS</div>
+        <div id="appStateText" class="state IDLE">IDLE</div>
+      </div>
+      <div id="activeModeLabel" style="font-size: 14px; font-weight: 700; color: var(--muted);">Ready</div>
+    </section>
+
+    <!-- Camera viewport -->
+    <div class="viewport-card" id="viewportCard">
+      <video id="videoElement" autoplay playsinline muted></video>
+      <canvas id="overlayCanvas"></canvas>
+      <div class="camera-placeholder" id="cameraPlaceholder">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+          <circle cx="12" cy="13" r="4"></circle>
+        </svg>
+        <p><strong>Camera Inactive</strong></p>
+        <button class="btn" style="min-height: 44px; font-size: 15px;" onclick="initCamera()">Enable Camera</button>
+      </div>
+    </div>
+
+    <!-- Fallback image upload for convenience -->
+    <div class="upload-strip">
+      <span>Or test with an image file:</span>
+      <label for="imageUpload" class="upload-label">Choose Image</label>
+      <input type="file" id="imageUpload" accept="image/*" onchange="handleFileUpload(event)">
+    </div>
+
+    <!-- Spoken Answer & Spatial Card -->
+    <section class="answer-card" aria-live="polite" id="answerCard">
+      <div class="answer-header">
+        <span>SPOKEN OUTPUT</span>
+        <span id="latencyText" style="color: var(--cyan); font-family: monospace;"></span>
+      </div>
+      <div class="answer-text" id="answerText">Press LOOK or ASK to begin perception.</div>
+      <div class="meta-badges" id="metaBadges">
+        <span class="meta-tag path-clear" id="pathTag">Path: Ready</span>
+        <span class="meta-tag" id="sceneTag">Scene: Unknown</span>
+        <span class="meta-tag" id="objectsCountTag">Objects: 0</span>
+      </div>
+    </section>
+
+    <!-- Primary Mode Controls -->
+    <nav class="controls-grid" aria-label="Main Controls">
+      <button class="btn" id="btnLook" onclick="runLookMode()">
+        <span>👁️</span> LOOK
+      </button>
+      <button class="btn" id="btnAsk" onclick="openAskModal()">
+        <span>❓</span> ASK
+      </button>
+      <button class="btn" id="btnAssistance" onclick="toggleAssistance()">
+        <span id="assistanceIcon">⚡</span> <span id="assistanceBtnText">START ASSISTANCE</span>
+      </button>
+      <button class="btn" id="btnRead" onclick="runReadMode()">
+        <span>📖</span> READ
+      </button>
+      <button class="btn" id="btnFind" onclick="openFindModal()">
+        <span>🔍</span> FIND OBJECT
+      </button>
+      <button class="btn" id="btnVoice" onclick="startVoiceInput()">
+        <span>🎙️</span> VOICE COMMAND
+      </button>
+      <button class="btn btn-stop-speech btn-full" onclick="stopSpeech()">
+        ⏹️ Tap to Stop Speech
+      </button>
+    </nav>
+
+    <footer>
+      <strong>Safety Rule:</strong> Assistive perception system only. Not a guaranteed navigation or collision-avoidance system. Monocular depth is relative; never cross roads solely based on perception audio.
+    </footer>
+  </div>
+
+  <!-- Ask Question Modal -->
+  <div class="modal-backdrop" id="askModal">
+    <div class="modal-content">
+      <h3 class="modal-title">Ask a Visual Question</h3>
+      <p style="color: var(--text-secondary); font-size: 14px;">Speak or type what you would like to know about the view:</p>
+      <input type="text" class="input-text" id="askInput" placeholder="e.g. What is in front of me? Is the path clear?">
+      <div class="quick-chips">
+        <div class="chip" onclick="setAskQuestion('What is in front of me?')">What is in front of me?</div>
+        <div class="chip" onclick="setAskQuestion('Is the path clear?')">Is the path clear?</div>
+        <div class="chip" onclick="setAskQuestion('Is anyone near me?')">Is anyone near me?</div>
+        <div class="chip" onclick="setAskQuestion('Where is the chair?')">Where is the chair?</div>
+        <div class="chip" onclick="setAskQuestion('Where are the stairs?')">Where are the stairs?</div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-secondary" onclick="closeAskModal()">Cancel</button>
+        <button class="btn-primary" onclick="submitAskQuestion()">Ask</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Find Object Modal -->
+  <div class="modal-backdrop" id="findModal">
+    <div class="modal-content">
+      <h3 class="modal-title">Find an Object</h3>
+      <p style="color: var(--text-secondary); font-size: 14px;">Select or type the object you are trying to locate:</p>
+      <input type="text" class="input-text" id="findInput" placeholder="e.g. bottle, keys, chair, person">
+      <div class="quick-chips">
+        <div class="chip" onclick="setFindTarget('bottle')">Bottle</div>
+        <div class="chip" onclick="setFindTarget('chair')">Chair</div>
+        <div class="chip" onclick="setFindTarget('person')">Person</div>
+        <div class="chip" onclick="setFindTarget('cell phone')">Phone</div>
+        <div class="chip" onclick="setFindTarget('backpack')">Backpack</div>
+        <div class="chip" onclick="setFindTarget('keys')">Keys</div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-secondary" onclick="closeFindModal()">Cancel</button>
+        <button class="btn-primary" onclick="submitFindObject()">Find</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = window.location.origin;
+    const API_KEY = 'dev-local-key';
+    const SESSION_ID = 'web-' + Math.random().toString(36).substring(2, 9);
+    let currentStream = null;
+    let assistanceIntervalId = null;
+    let isContinuousAssistance = false;
+    let ttsSynth = window.speechSynthesis;
+    let lastUploadedBlob = null;
+
+    const video = document.getElementById('videoElement');
+    const canvas = document.getElementById('overlayCanvas');
+    const ctx = canvas.getContext('2d');
+    const stateText = document.getElementById('appStateText');
+    const answerText = document.getElementById('answerText');
+    const latencyText = document.getElementById('latencyText');
+    const pathTag = document.getElementById('pathTag');
+    const sceneTag = document.getElementById('sceneTag');
+    const objectsCountTag = document.getElementById('objectsCountTag');
+    const backendBadge = document.getElementById('backendBadge');
+    const backendStatusText = document.getElementById('backendStatusText');
+
+    function setState(stateName) {
+      stateText.textContent = stateName;
+      stateText.className = 'state ' + stateName;
+    }
+
+    async function checkHealth() {
+      try {
+        const res = await fetch(`${API_BASE}/api/health`, {
+          headers: { 'X-API-Key': API_KEY }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          backendBadge.className = 'badge connected';
+          backendStatusText.textContent = `API Ready (${data.device || 'cpu'})`;
+        } else {
+          backendBadge.className = 'badge disconnected';
+          backendStatusText.textContent = 'API Error';
+        }
+      } catch {
+        backendBadge.className = 'badge disconnected';
+        backendStatusText.textContent = 'API Offline';
+      }
+    }
+    setInterval(checkHealth, 10000);
+    checkHealth();
+
+    async function initCamera() {
+      try {
+        const constraints = {
+          video: {
+            facingMode: { ideal: 'environment' },
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          },
+          audio: false
+        };
+        currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+        video.srcObject = currentStream;
+        document.getElementById('cameraPlaceholder').style.display = 'none';
+        video.onloadedmetadata = () => {
+          canvas.width = video.videoWidth || 640;
+          canvas.height = video.videoHeight || 480;
+        };
+      } catch (err) {
+        console.warn('Camera access denied or unavailable:', err);
+        setState('PERMISSION_REQUIRED');
+        speak('Camera access not granted. You can use the file upload option below.');
+      }
+    }
+
+    function captureBlobFromVideo() {
+      return new Promise((resolve) => {
+        if (video && video.videoWidth > 0 && currentStream && currentStream.active) {
+          const tempCanvas = document.createElement('canvas');
+          tempCanvas.width = video.videoWidth;
+          tempCanvas.height = video.videoHeight;
+          const tempCtx = tempCanvas.getContext('2d');
+          tempCtx.drawImage(video, 0, 0);
+          tempCanvas.toBlob((blob) => resolve(blob), 'image/jpeg', 0.85);
+          return;
+        }
+        if (lastUploadedBlob) {
+          resolve(lastUploadedBlob);
+          return;
+        }
+        resolve(null);
+      });
+    }
+
+    function speak(text) {
+      if (!text || !ttsSynth) return;
+      ttsSynth.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 0.95;
+      utterance.pitch = 1.0;
+      utterance.onstart = () => setState('SPEAKING');
+      utterance.onend = () => setState(isContinuousAssistance ? 'CONTINUOUS_ASSISTANCE' : 'IDLE');
+      utterance.onerror = () => setState(isContinuousAssistance ? 'CONTINUOUS_ASSISTANCE' : 'IDLE');
+      ttsSynth.speak(utterance);
+    }
+
+    function stopSpeech() {
+      if (ttsSynth) ttsSynth.cancel();
+      setState(isContinuousAssistance ? 'CONTINUOUS_ASSISTANCE' : 'IDLE');
+    }
+
+    function drawDetections(objects, imageWidth, imageHeight) {
+      if (!canvas || !ctx) return;
+      canvas.width = imageWidth;
+      canvas.height = imageHeight;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      for (const obj of (objects || [])) {
+        const x = obj.bbox.x * canvas.width;
+        const y = obj.bbox.y * canvas.height;
+        const w = obj.bbox.width * canvas.width;
+        const h = obj.bbox.height * canvas.height;
+
+        let strokeColor = '#00e5ff';
+        if (obj.path_relevance === 'high') strokeColor = '#ff5252';
+        else if (obj.path_relevance === 'medium') strokeColor = '#ff9100';
+
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = 3;
+        ctx.strokeRect(x, y, w, h);
+
+        const label = `${obj.type} (${obj.distance_range || 'dist unk'})`;
+        ctx.font = 'bold 15px sans-serif';
+        const textWidth = ctx.measureText(label).width;
+
+        ctx.fillStyle = strokeColor;
+        ctx.fillRect(x, Math.max(0, y - 22), textWidth + 10, 22);
+
+        ctx.fillStyle = '#000000';
+        ctx.fillText(label, x + 5, Math.max(16, y - 5));
+      }
+    }
+
+    async function sendVisionRequest(endpoint, formData) {
+      setState('PROCESSING');
+      const start = performance.now();
+      try {
+        const res = await fetch(`${API_BASE}${endpoint}`, {
+          method: 'POST',
+          headers: {
+            'X-API-Key': API_KEY
+          },
+          body: formData
+        });
+        const data = await res.json();
+        const duration = Math.round(performance.now() - start);
+        latencyText.textContent = `${duration}ms (${data.processing_time_ms || 0}ms pipeline)`;
+
+        if (res.ok && data.success) {
+          answerText.textContent = data.answer || 'No description available.';
+          if (data.answer) {
+            speak(data.answer);
+          }
+
+          // Update tags
+          if (data.path) {
+            pathTag.textContent = `Path: ${data.path.path_status.replace('_', ' ')}`;
+            pathTag.className = `meta-tag path-${data.path.path_status}`;
+          }
+          if (data.scene) {
+            sceneTag.textContent = `Scene: ${data.scene.scene_type}`;
+          }
+          objectsCountTag.textContent = `Objects: ${(data.objects || []).length}`;
+
+          drawDetections(data.objects, canvas.width, canvas.height);
+          return data;
+        } else {
+          const errDetail = data.detail || data.error || (typeof data === 'string' ? data : 'Request unsuccessful.');
+          answerText.textContent = errDetail;
+          speak(errDetail);
+          setState('ERROR');
+          return data;
+        }
+      } catch (err) {
+        console.error('Vision request error:', err);
+        answerText.textContent = "I couldn't reach the server. Make sure the backend is running.";
+        speak("I couldn't reach the server. Make sure the backend is running.");
+        setState('ERROR');
+      }
+    }
+
+    async function runLookMode() {
+      let blob = await captureBlobFromVideo();
+      if (!blob) {
+        speak('Please enable camera or select an image file first.');
+        return;
+      }
+      setState('CAPTURING');
+      const fd = new FormData();
+      fd.append('file', blob, 'frame.jpg');
+      fd.append('session_id', SESSION_ID);
+      await sendVisionRequest('/api/vision/analyze', fd);
+    }
+
+    async function runReadMode() {
+      let blob = await captureBlobFromVideo();
+      if (!blob) {
+        speak('Please enable camera or select an image file first.');
+        return;
+      }
+      setState('CAPTURING');
+      const fd = new FormData();
+      fd.append('file', blob, 'frame.jpg');
+      fd.append('question', 'Read this.');
+      fd.append('session_id', SESSION_ID);
+      await sendVisionRequest('/api/vision/read', fd);
+    }
+
+    async function toggleAssistance() {
+      isContinuousAssistance = !isContinuousAssistance;
+      const btn = document.getElementById('btnAssistance');
+      const btnText = document.getElementById('assistanceBtnText');
+
+      if (isContinuousAssistance) {
+        btn.classList.add('active-mode');
+        btnText.textContent = 'STOP ASSISTANCE';
+        setState('CONTINUOUS_ASSISTANCE');
+        speak('Continuous assistance is on. I will only announce important changes.');
+
+        const fd = new FormData();
+        fd.append('session_id', SESSION_ID);
+        fetch(`${API_BASE}/api/assistance/start`, {
+          method: 'POST',
+          headers: { 'X-API-Key': API_KEY },
+          body: fd
+        }).catch(console.error);
+
+        assistanceIntervalId = setInterval(async () => {
+          const blob = await captureBlobFromVideo();
+          if (!blob) return;
+          const frameFd = new FormData();
+          frameFd.append('file', blob, 'frame.jpg');
+          frameFd.append('session_id', SESSION_ID);
+          const data = await sendVisionRequest('/api/assistance/frame', frameFd);
+        }, 3500);
+      } else {
+        btn.classList.remove('active-mode');
+        btnText.textContent = 'START ASSISTANCE';
+        if (assistanceIntervalId) clearInterval(assistanceIntervalId);
+        setState('IDLE');
+        speak('Continuous assistance is off.');
+
+        const fd = new FormData();
+        fd.append('session_id', SESSION_ID);
+        fetch(`${API_BASE}/api/assistance/stop`, {
+          method: 'POST',
+          headers: { 'X-API-Key': API_KEY },
+          body: fd
+        }).catch(console.error);
+      }
+    }
+
+    // Ask Modal
+    function openAskModal() {
+      document.getElementById('askModal').classList.add('open');
+      document.getElementById('askInput').focus();
+    }
+    function closeAskModal() {
+      document.getElementById('askModal').classList.remove('open');
+    }
+    function setAskQuestion(q) {
+      document.getElementById('askInput').value = q;
+    }
+    async function submitAskQuestion() {
+      const q = document.getElementById('askInput').value.trim();
+      if (!q) return;
+      closeAskModal();
+
+      let blob = await captureBlobFromVideo();
+      if (!blob) {
+        speak('Please enable camera or choose an image file first.');
+        return;
+      }
+      const fd = new FormData();
+      fd.append('file', blob, 'frame.jpg');
+      fd.append('question', q);
+      fd.append('session_id', SESSION_ID);
+      await sendVisionRequest('/api/vision/ask', fd);
+    }
+
+    // Find Modal
+    function openFindModal() {
+      document.getElementById('findModal').classList.add('open');
+      document.getElementById('findInput').focus();
+    }
+    function closeFindModal() {
+      document.getElementById('findModal').classList.remove('open');
+    }
+    function setFindTarget(t) {
+      document.getElementById('findInput').value = t;
+    }
+    async function submitFindObject() {
+      const target = document.getElementById('findInput').value.trim();
+      if (!target) return;
+      closeFindModal();
+
+      let blob = await captureBlobFromVideo();
+      if (!blob) {
+        speak('Please enable camera or choose an image file first.');
+        return;
+      }
+      const fd = new FormData();
+      fd.append('file', blob, 'frame.jpg');
+      fd.append('target', target);
+      fd.append('session_id', SESSION_ID);
+      await sendVisionRequest('/api/vision/find', fd);
+    }
+
+    // File Upload Handler
+    function handleFileUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      lastUploadedBlob = file;
+      const img = new Image();
+      img.onload = () => {
+        canvas.width = img.naturalWidth || 640;
+        canvas.height = img.naturalHeight || 480;
+        ctx.drawImage(img, 0, 0);
+        document.getElementById('cameraPlaceholder').style.display = 'none';
+      };
+      img.src = URL.createObjectURL(file);
+
+      // Immediately run LOOK on chosen image
+      const fd = new FormData();
+      fd.append('file', file, file.name);
+      fd.append('session_id', SESSION_ID);
+      sendVisionRequest('/api/vision/analyze', fd);
+    }
+
+    // Voice Command (Web Speech API)
+    function startVoiceInput() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        speak('Speech recognition is not supported in this browser. Please use the buttons.');
+        return;
+      }
+      const recognizer = new SpeechRecognition();
+      recognizer.lang = 'en-US';
+      recognizer.interimResults = false;
+      setState('LISTENING');
+      speak('Listening.');
+
+      recognizer.onresult = (e) => {
+        const text = e.results[0][0].transcript.toLowerCase();
+        console.log('Spoken command:', text);
+        if (text.includes('start assistance')) {
+          if (!isContinuousAssistance) toggleAssistance();
+        } else if (text.includes('stop assistance')) {
+          if (isContinuousAssistance) toggleAssistance();
+        } else if (text.includes('read')) {
+          runReadMode();
+        } else if (text.includes('find')) {
+          const target = text.replace('find my', '').replace('find', '').trim();
+          document.getElementById('findInput').value = target || 'bottle';
+          submitFindObject();
+        } else if (text.includes('look') || text.includes("what's around")) {
+          runLookMode();
+        } else {
+          document.getElementById('askInput').value = text;
+          submitAskQuestion();
+        }
+      };
+      recognizer.onerror = () => {
+        setState('IDLE');
+        speak("I didn't catch that.");
+      };
+      recognizer.onend = () => {
+        if (stateText.textContent === 'LISTENING') setState('IDLE');
+      };
+      recognizer.start();
+    }
+
+    // Try auto-initializing camera on page load
+    window.addEventListener('DOMContentLoaded', () => {
+      initCamera();
+    });
+  </script>
+</body>
+</html>

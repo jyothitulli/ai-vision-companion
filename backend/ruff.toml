@@ -1,0 +1,4 @@
+# Backend
+ruff check app tests
+# Mobile
+npx tsc --noEmit

@@ -1,0 +1,13 @@
+# Optional heavy extras. The default requirements.txt uses CPU-friendly packages.
+#
+# PyTorch is installed separately because the index depends on CUDA vs CPU.
+# CPU (this machine has no NVIDIA driver):
+#   .tools/python/python.exe -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+#
+# PaddleOCR is preferred by the product spec. On Windows it is frequently
+# broken or extremely heavy. RapidOCR (ONNXRuntime) is the default OCRProvider
+# implementation; PaddleOCRProvider is wired behind the same interface and is
+# used automatically if `paddleocr` imports successfully.
+#
+# Optional Paddle:
+#   pip install paddlepaddle paddleocr
