@@ -76,6 +76,7 @@ class OpenVocabularyDetector(ObjectDetector):
                 conf=self._confidence,
                 device=self._device,
                 verbose=False,
+                imgsz=640,
             )
             detections: list[RawDetection] = []
             if not results or results[0].boxes is None:

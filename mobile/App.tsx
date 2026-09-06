@@ -28,7 +28,10 @@ export default function App() {
   const [backendUp, setBackendUp] = useState<boolean | null>(null);
   const [assistanceOn, setAssistanceOn] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const assistanceTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const assistanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const assistanceActiveRef = useRef(false);
+  const isAssistanceLoopRunning = useRef(false);
+  const isLookRunning = useRef(false);
 
   useEffect(() => {
     healthCheck().then(setBackendUp);
@@ -58,6 +61,10 @@ export default function App() {
   }
 
   async function runMode(mode: Mode, extra: Record<string, string> = {}) {
+    if (mode === "look") {
+      if (isLookRunning.current) return;
+      isLookRunning.current = true;
+    }
     try {
       if (!permission?.granted) {
         setAppState("PERMISSION_REQUIRED");
@@ -87,12 +94,16 @@ export default function App() {
       setStatusLine(answer);
       setAppState("SPEAKING");
       await speak(answer);
-      setAppState(assistanceOn ? "CONTINUOUS_ASSISTANCE" : "IDLE");
+      setAppState(assistanceActiveRef.current ? "CONTINUOUS_ASSISTANCE" : "IDLE");
     } catch {
       setAppState("ERROR");
       setStatusLine("I couldn't process the image. Please try again.");
       await speak("I couldn't process the image. Please try again.");
-      setAppState("IDLE");
+      setAppState(assistanceActiveRef.current ? "CONTINUOUS_ASSISTANCE" : "IDLE");
+    } finally {
+      if (mode === "look") {
+        isLookRunning.current = false;
+      }
     }
   }
 
@@ -156,10 +167,33 @@ export default function App() {
     await runMode("find", { target });
   }
 
+  async function startAssistanceLoop() {
+    if (isAssistanceLoopRunning.current) return;
+    isAssistanceLoopRunning.current = true;
+    try {
+      while (assistanceActiveRef.current) {
+        if (!permission?.granted) break;
+        await runMode("assistance");
+        if (!assistanceActiveRef.current) break;
+        await new Promise((resolve) => {
+          assistanceTimer.current = setTimeout(resolve, 3500);
+        });
+        assistanceTimer.current = null;
+      }
+    } finally {
+      isAssistanceLoopRunning.current = false;
+      if (assistanceTimer.current) {
+        clearTimeout(assistanceTimer.current);
+        assistanceTimer.current = null;
+      }
+    }
+  }
+
   async function toggleAssistance(on: boolean) {
     setAssistanceOn(on);
+    assistanceActiveRef.current = on;
     if (assistanceTimer.current) {
-      clearInterval(assistanceTimer.current);
+      clearTimeout(assistanceTimer.current);
       assistanceTimer.current = null;
     }
     if (!on) {
@@ -171,9 +205,7 @@ export default function App() {
     await postSession("/api/assistance/start", SESSION_ID);
     setAppState("CONTINUOUS_ASSISTANCE");
     await speak("Continuous assistance is on. I will only announce important changes.");
-    assistanceTimer.current = setInterval(() => {
-      void runMode("assistance");
-    }, 3500);
+    void startAssistanceLoop();
   }
 
   if (!permission) {

@@ -57,6 +57,7 @@ class YOLODetector(ObjectDetector):
             conf=scan_conf,
             device=self._device,
             verbose=False,
+            imgsz=640,
         )
         detections: list[RawDetection] = []
         if not results or results[0].boxes is None:
@@ -95,6 +96,7 @@ class YOLODetector(ObjectDetector):
             verbose=False,
             persist=True,
             tracker="bytetrack.yaml",
+            imgsz=640,
         )
         detections: list[RawDetection] = []
         if not results:
@@ -155,6 +157,7 @@ class YOLOWorldFinder(ObjectDetector):
             conf=self._confidence,
             device=self._device,
             verbose=False,
+            imgsz=640,
         )
         detections: list[RawDetection] = []
         if not results:

@@ -612,15 +612,17 @@
         if (window.location.port === '8000') return window.location.origin;
         return 'http://localhost:8000';
       }
-      return window.location.origin;
+      return 'https://ai-vision-companion.onrender.com';
     }
 
     let API_BASE = resolveBackendUrl();
     let API_KEY = localStorage.getItem('VISION_API_KEY') || 'dev-local-key';
     const SESSION_ID = 'web-' + Math.random().toString(36).substring(2, 9);
     let currentStream = null;
-    let assistanceIntervalId = null;
     let isContinuousAssistance = false;
+    let assistanceLoopActive = false;
+    let assistanceTimeoutId = null;
+    let isLookRunning = false;
     let ttsSynth = window.speechSynthesis;
     let lastUploadedBlob = null;
 
@@ -885,18 +887,30 @@
     }
 
     async function runLookMode() {
-      unlockAudio();
-      await ensureCameraActive();
-      let blob = await captureBlobFromVideo();
-      if (!blob) {
-        speak('Please enable camera or select an image file first.');
+      if (isLookRunning) {
+        console.warn('LOOK request already in progress, ignoring duplicate trigger');
         return;
       }
-      setState('CAPTURING');
-      const fd = new FormData();
-      fd.append('file', blob, 'frame.jpg');
-      fd.append('session_id', SESSION_ID);
-      await sendVisionRequest('/api/vision/analyze', fd);
+      isLookRunning = true;
+      const btn = document.getElementById('btnLook');
+      if (btn) btn.disabled = true;
+      try {
+        unlockAudio();
+        await ensureCameraActive();
+        let blob = await captureBlobFromVideo();
+        if (!blob) {
+          speak('Please enable camera or select an image file first.');
+          return;
+        }
+        setState('CAPTURING');
+        const fd = new FormData();
+        fd.append('file', blob, 'frame.jpg');
+        fd.append('session_id', SESSION_ID);
+        await sendVisionRequest('/api/vision/analyze', fd);
+      } finally {
+        isLookRunning = false;
+        if (btn) btn.disabled = false;
+      }
     }
 
     async function runReadMode() {
@@ -915,12 +929,45 @@
       await sendVisionRequest('/api/vision/read', fd);
     }
 
+    async function startAssistanceLoop() {
+      if (assistanceLoopActive) return;
+      assistanceLoopActive = true;
+      try {
+        while (isContinuousAssistance) {
+          const blob = await captureBlobFromVideo();
+          if (!isContinuousAssistance) break;
+          if (blob) {
+            const frameFd = new FormData();
+            frameFd.append('file', blob, 'frame.jpg');
+            frameFd.append('session_id', SESSION_ID);
+            // Sequential: await response before triggering delay and next frame
+            await sendVisionRequest('/api/assistance/frame', frameFd);
+          }
+          if (!isContinuousAssistance) break;
+
+          // Wait ~3.5s after response before capturing next frame
+          await new Promise((resolve) => {
+            assistanceTimeoutId = setTimeout(resolve, 3500);
+          });
+          assistanceTimeoutId = null;
+        }
+      } catch (err) {
+        console.error('Assistance loop error:', err);
+      } finally {
+        assistanceLoopActive = false;
+        if (assistanceTimeoutId) {
+          clearTimeout(assistanceTimeoutId);
+          assistanceTimeoutId = null;
+        }
+      }
+    }
+
     async function toggleAssistance() {
-      isContinuousAssistance = !isContinuousAssistance;
       const btn = document.getElementById('btnAssistance');
       const btnText = document.getElementById('assistanceBtnText');
 
-      if (isContinuousAssistance) {
+      if (!isContinuousAssistance) {
+        isContinuousAssistance = true;
         btn.classList.add('active-mode');
         btnText.textContent = 'STOP ASSISTANCE';
         setState('CONTINUOUS_ASSISTANCE');
@@ -934,18 +981,15 @@
           body: fd
         }).catch(console.error);
 
-        assistanceIntervalId = setInterval(async () => {
-          const blob = await captureBlobFromVideo();
-          if (!blob) return;
-          const frameFd = new FormData();
-          frameFd.append('file', blob, 'frame.jpg');
-          frameFd.append('session_id', SESSION_ID);
-          const data = await sendVisionRequest('/api/assistance/frame', frameFd);
-        }, 3500);
+        void startAssistanceLoop();
       } else {
+        isContinuousAssistance = false;
+        if (assistanceTimeoutId) {
+          clearTimeout(assistanceTimeoutId);
+          assistanceTimeoutId = null;
+        }
         btn.classList.remove('active-mode');
         btnText.textContent = 'START ASSISTANCE';
-        if (assistanceIntervalId) clearInterval(assistanceIntervalId);
         setState('IDLE');
         speak('Continuous assistance is off.');
 

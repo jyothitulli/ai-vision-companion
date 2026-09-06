@@ -1,4 +1,5 @@
 
+import asyncio
 import logging
 import time
 from typing import Optional
@@ -234,7 +235,7 @@ async def transcribe(
         with tempfile.NamedTemporaryFile(delete=True, suffix=suffix) as tmp:
             tmp.write(data)
             tmp.flush()
-            text = runtime_mod.get_speech().transcribe(tmp.name)
+            text = await asyncio.to_thread(runtime_mod.get_speech().transcribe, tmp.name)
     except Exception:
         logger.exception("stt_failed")
         raise HTTPException(status_code=500, detail=SAFE_USER_ERRORS["stt_failure"]) from None
@@ -272,7 +273,12 @@ async def _run_mode(
             intent = Intent(mode="find", question=question or "", target=target)
         if mode == "assistance":
             intent = Intent(mode="look", question="continuous")
-        result = pipeline.analyze(image, intent, persist_tracks=persist_tracks or mode == "assistance")
+        result = await asyncio.to_thread(
+            pipeline.analyze,
+            image,
+            intent,
+            persist_tracks=persist_tracks or mode == "assistance",
+        )
         if mode == "assistance":
             spoken = assistance_manager.ingest(session_id or "default", result, intent)
             result.answer = spoken or ""

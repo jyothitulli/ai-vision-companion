@@ -115,3 +115,49 @@ def test_rejects_non_image(monkeypatch) -> None:
         data={"question": "what is ahead"},
     )
     assert response.status_code == 400
+
+
+import pytest
+
+
+@pytest.mark.anyio
+async def test_concurrency_non_blocking_event_loop(monkeypatch) -> None:
+    import asyncio
+    import time
+    from httpx import ASGITransport, AsyncClient
+
+    class SlowBlockingPipeline(FakePipeline):
+        def analyze(self, image, intent, timestamp_s=None, persist_tracks=False):
+            time.sleep(0.3)  # Synchronous blocking call
+            return super().analyze(image, intent, timestamp_s, persist_tracks)
+
+    monkeypatch.setattr(runtime_mod, "get_pipeline", lambda: SlowBlockingPipeline())
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        t0 = time.perf_counter()
+
+        async def send_vision():
+            return await ac.post(
+                "/api/vision/analyze",
+                files={"file": ("frame.jpg", _jpeg(), "image/jpeg")},
+            )
+
+        async def send_health():
+            # Wait a tiny fraction so vision request starts first
+            await asyncio.sleep(0.05)
+            h_start = time.perf_counter()
+            resp = await ac.get("/api/health")
+            h_duration = time.perf_counter() - h_start
+            return resp, h_duration
+
+        vision_task = asyncio.create_task(send_vision())
+        health_task = asyncio.create_task(send_health())
+
+        vision_res, (health_res, health_duration) = await asyncio.gather(vision_task, health_task)
+
+        assert vision_res.status_code == 200
+        assert health_res.status_code == 200
+        # Health check took far less than the 0.3s blocking sleep of vision analyze
+        assert health_duration < 0.25
+

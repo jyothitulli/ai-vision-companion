@@ -125,7 +125,7 @@ class FineTunedSpecializedDetector(SpecializedDetector):
         return TARGET_CLASSES
 
     def detect(self, image: np.ndarray) -> list[RawDetection]:
-        results = self._model.predict(image, conf=self._confidence, verbose=False)
+        results = self._model.predict(image, conf=self._confidence, verbose=False, imgsz=640)
         detections: list[RawDetection] = []
         if not results or results[0].boxes is None:
             return detections

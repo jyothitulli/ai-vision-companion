@@ -25,7 +25,7 @@ from app.vision.types import BoundingBox, PipelineResult, SceneObject
 from app.vision.interfaces import RawDetection
 
 
-MAX_SIDE = 960
+MAX_SIDE = 640
 
 
 def preprocess_bgr(image: np.ndarray) -> np.ndarray:
