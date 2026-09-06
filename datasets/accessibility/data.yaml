@@ -1,7 +1,7 @@
 path: .
-train: train/images
-val: validation/images
-test: testing/images
+train: images/train
+val: images/val
+test: images/test
 
 names:
   0: stairs

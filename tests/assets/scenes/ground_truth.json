@@ -1,0 +1,28 @@
+{
+  "scenes": [
+    {
+      "file": "scene1_desk_multi_object.jpg",
+      "description": "Office/hardware desk scene with multiple small and peripheral objects",
+      "ground_truth_objects": ["cell phone", "keyboard", "mouse", "laptop"],
+      "small_objects": ["cell phone", "mouse"],
+      "expected_relations": [
+        {"subject": "cell phone", "relation": "on", "reference": "table"},
+        {"subject": "keyboard", "relation": "on", "reference": "table"}
+      ]
+    },
+    {
+      "file": "scene2_bus_pedestrians.jpg",
+      "description": "Outdoor campus bus stop with bus, standing pedestrians, and smartphone interface",
+      "ground_truth_objects": ["bus", "person", "cell phone"],
+      "small_objects": ["cell phone"],
+      "expected_relations": []
+    },
+    {
+      "file": "scene3_person.jpg",
+      "description": "Indoor portrait of a person against a plain background",
+      "ground_truth_objects": ["person"],
+      "small_objects": [],
+      "expected_relations": []
+    }
+  ]
+}

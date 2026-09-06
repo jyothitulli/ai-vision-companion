@@ -5,7 +5,13 @@ from typing import Optional
 import numpy as np
 
 from app.config import Settings
-from app.vision.types import DistanceBand, HorizontalPosition, PathRelevance, SceneObject
+from app.vision.types import (
+    DistanceBand,
+    HorizontalPosition,
+    PathRelevance,
+    SceneObject,
+    SpatialRelationship,
+)
 
 # Spoken ranges are coarse on purpose. Monocular depth is not metric.
 DISTANCE_SPEECH = {
@@ -46,17 +52,37 @@ class SpatialReasoningEngine:
                 )
             )
 
-        # Compute object-to-object spatial relationships
-        relationships_by_id = self.compute_relationships(enriched)
+        # Compute object-to-object spatial relationships with confidence
+        text_rels, struct_rels = self.compute_relationships_detailed(enriched)
         final_objects: list[SceneObject] = []
         for obj in enriched:
-            rels = relationships_by_id.get(obj.id, [])
-            final_objects.append(obj.model_copy(update={"relationships": rels}))
+            rels = text_rels.get(obj.id, [])
+            d_rels = struct_rels.get(obj.id, [])
+            final_objects.append(
+                obj.model_copy(
+                    update={
+                        "relationships": rels,
+                        "detailed_relationships": d_rels,
+                    }
+                )
+            )
         return final_objects
 
     def compute_relationships(self, objects: list[SceneObject]) -> dict[int, list[str]]:
-        """Compute grounded spatial relationships between detected objects."""
-        relationships: dict[int, list[str]] = {obj.id: [] for obj in objects}
+        """Compute grounded spatial relationships between detected objects (text list)."""
+        text_rels, _ = self.compute_relationships_detailed(objects)
+        return text_rels
+
+    def compute_relationships_detailed(
+        self, objects: list[SceneObject]
+    ) -> tuple[dict[int, list[str]], dict[int, list[SpatialRelationship]]]:
+        """Compute grounded spatial relationships with confidence metrics.
+        
+        Requires geometric support, vertical containment, and depth consistency.
+        Only relationships meeting minimum confidence thresholds are retained.
+        """
+        text_relationships: dict[int, list[str]] = {obj.id: [] for obj in objects}
+        struct_relationships: dict[int, list[SpatialRelationship]] = {obj.id: [] for obj in objects}
         surface_types = {"dining table", "table", "desk", "bench", "chair", "bed", "couch"}
 
         for i, obj_a in enumerate(objects):
@@ -80,26 +106,70 @@ class SpatialReasoningEngine:
                         obj_b.bbox.y - 0.05 <= bot_a <= (obj_b.bbox.y + obj_b.bbox.height * 0.85)
                     )
                     if x_overlap and y_support:
-                        rel = f"on the {obj_b.type}"
-                        if rel not in relationships[obj_a.id]:
-                            relationships[obj_a.id].append(rel)
+                        # Compute confidence based on bounding box geometry and detector confidence
+                        overlap_x = max(0.0, min(obj_a.bbox.x + obj_a.bbox.width, obj_b.bbox.x + obj_b.bbox.width) - max(obj_a.bbox.x, obj_b.bbox.x))
+                        x_overlap_ratio = overlap_x / max(1e-4, obj_a.bbox.width)
+                        geom_score = 0.6 * min(1.0, x_overlap_ratio) + 0.4 * max(0.0, 1.0 - abs(bot_a - obj_b.bbox.y) * 2)
+                        depth_bonus = 0.1 if obj_a.distance_band == obj_b.distance_band and obj_a.distance_band != DistanceBand.UNKNOWN else 0.0
+                        conf = round(min(0.99, max(0.40, 0.4 * obj_a.confidence + 0.3 * obj_b.confidence + 0.3 * geom_score + depth_bonus)), 2)
 
-                # 2. Horizontal proximity check (beside / left / right)
-                # Objects close horizontally within same depth band
+                        if conf >= 0.50:
+                            rel_text = f"on the {obj_b.type}"
+                            if rel_text not in text_relationships[obj_a.id]:
+                                text_relationships[obj_a.id].append(rel_text)
+                            struct_relationships[obj_a.id].append(
+                                SpatialRelationship(
+                                    subject=obj_a.type,
+                                    relation="on",
+                                    reference=obj_b.type,
+                                    confidence=conf,
+                                )
+                            )
+
+                # 2. Horizontal proximity check (beside / left_of / right_of)
                 if obj_a.distance_band == obj_b.distance_band and obj_a.distance_band != DistanceBand.UNKNOWN:
                     dx = cx_a - cx_b
                     dy = abs(cy_a - cy_b)
-                    if 0.05 < abs(dx) < 0.28 and dy < 0.30:
-                        if dx < 0:
-                            rel = f"to the left of {obj_b.type}"
-                        else:
-                            rel = f"to the right of {obj_b.type}"
-                        if rel not in relationships[obj_a.id] and len(relationships[obj_a.id]) < 2:
-                            relationships[obj_a.id].append(rel)
+                    if 0.05 < abs(dx) < 0.32 and dy < 0.30:
+                        prox_conf = round(
+                            min(
+                                0.95,
+                                max(
+                                    0.45,
+                                    0.45 * min(obj_a.confidence, obj_b.confidence)
+                                    + 0.55 * max(0.0, 1.0 - abs(dx) * 2.5),
+                                ),
+                            ),
+                            2,
+                        )
+                        if prox_conf >= 0.50 and len(text_relationships[obj_a.id]) < 2:
+                            rel_verb = "left_of" if dx < 0 else "right_of"
+                            rel_text = f"to the left of {obj_b.type}" if dx < 0 else f"to the right of {obj_b.type}"
+                            if rel_text not in text_relationships[obj_a.id]:
+                                text_relationships[obj_a.id].append(rel_text)
+                            struct_relationships[obj_a.id].append(
+                                SpatialRelationship(
+                                    subject=obj_a.type,
+                                    relation=rel_verb,
+                                    reference=obj_b.type,
+                                    confidence=prox_conf,
+                                )
+                            )
 
-        return relationships
+        return text_relationships, struct_relationships
 
-    def classify_position(self, cx_norm: float) -> HorizontalPosition:
+    def classify_position(self, cx_norm: float, detailed: bool = False) -> HorizontalPosition:
+        if detailed:
+            if cx_norm < 0.15:
+                return HorizontalPosition.FAR_LEFT
+            if cx_norm < 0.35:
+                return HorizontalPosition.LEFT
+            if cx_norm > 0.85:
+                return HorizontalPosition.FAR_RIGHT
+            if cx_norm > 0.65:
+                return HorizontalPosition.RIGHT
+            return HorizontalPosition.CENTER
+
         if cx_norm < 0.33:
             return HorizontalPosition.LEFT
         if cx_norm > 0.67:

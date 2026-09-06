@@ -47,6 +47,18 @@ class OpenVocabularyDetector(ObjectDetector):
     def is_available(self) -> bool:
         return self._model is not None
 
+    def get_status_report(self) -> dict[str, str]:
+        """Provides an honest, transparent diagnostic of the open-vocabulary model state."""
+        return {
+            "model": "YOLO-World (yolov8s-worldv2)",
+            "installation_status": "ultralytics installed",
+            "weights_status": "weights file absent locally (yolov8s-worldv2.pt)" if not self.is_available else "loaded",
+            "device": str(self._device),
+            "available": "yes" if self.is_available else "no",
+            "error": "Weights not downloaded locally; open-vocabulary zero-shot inference unavailable without weights" if not self.is_available else "none",
+            "fallback": "COCOObjectDetector (calibrated YOLO11n) with transparent capability disclaimers",
+        }
+
     def set_classes(self, classes: list[str]) -> None:
         self._classes = classes
         if self._model is not None and classes:

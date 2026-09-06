@@ -7,9 +7,11 @@ from pydantic import BaseModel, Field
 
 
 class HorizontalPosition(str, Enum):
+    FAR_LEFT = "far left"
     LEFT = "left"
     CENTER = "center"
     RIGHT = "right"
+    FAR_RIGHT = "far right"
 
 
 class DistanceBand(str, Enum):
@@ -49,6 +51,13 @@ class BoundingBox(BaseModel):
     height: float = Field(ge=0, le=1)
 
 
+class SpatialRelationship(BaseModel):
+    subject: str
+    relation: str
+    reference: str
+    confidence: float = 0.5
+
+
 class SceneObject(BaseModel):
     id: int
     type: str
@@ -64,6 +73,7 @@ class SceneObject(BaseModel):
     specialized: bool = False
     track_id: Optional[int] = None
     relationships: list[str] = Field(default_factory=list)
+    detailed_relationships: list[SpatialRelationship] = Field(default_factory=list)
 
 
 class PathObstacle(BaseModel):

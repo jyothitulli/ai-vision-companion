@@ -32,20 +32,26 @@ CLASS_CONFIDENCE_OVERRIDES: dict[str, float] = {
 class YOLODetector(ObjectDetector):
     """Ultralytics YOLO closed-set detector with class-calibrated confidence."""
 
-    def __init__(self, settings: Settings):
+    def __init__(
+        self,
+        settings: Settings,
+        confidence: float | None = None,
+        enable_overrides: bool = True,
+    ):
         from ultralytics import YOLO
 
         weights = Path(settings.yolo_model)
         if not weights.is_file():
             weights = settings.weights_dir / Path(settings.yolo_model).name
         self._model = YOLO(str(weights) if weights.is_file() else settings.yolo_model)
-        self._confidence = settings.yolo_confidence
+        self._confidence = confidence if confidence is not None else settings.yolo_confidence
         self._device = settings.device
+        self._enable_overrides = enable_overrides
         logger.info("yolo_loaded", extra={"model": settings.yolo_model, "device": settings.device})
 
     def detect(self, image: np.ndarray) -> list[RawDetection]:
-        # Predict with lower baseline threshold to capture small candidate objects
-        scan_conf = min(0.18, self._confidence)
+        # Predict with lower baseline threshold to capture small candidate objects if overrides enabled
+        scan_conf = min(0.18, self._confidence) if self._enable_overrides else self._confidence
         results = self._model.predict(
             image,
             conf=scan_conf,
@@ -53,21 +59,20 @@ class YOLODetector(ObjectDetector):
             verbose=False,
         )
         detections: list[RawDetection] = []
-        if not results:
+        if not results or results[0].boxes is None:
             return detections
         result = results[0]
         names = result.names
-        boxes = result.boxes
-        if boxes is None:
-            return detections
-        for box in boxes:
+        for box in result.boxes:
+            conf = float(box.conf[0].item())
             cls_id = int(box.cls[0].item())
             class_name = str(names.get(cls_id, cls_id))
-            conf = float(box.conf[0].item())
-            
-            # Apply class-specific calibrated threshold
-            required_conf = CLASS_CONFIDENCE_OVERRIDES.get(class_name.lower(), self._confidence)
-            if conf < required_conf:
+            target_conf = (
+                CLASS_CONFIDENCE_OVERRIDES.get(class_name.lower(), self._confidence)
+                if self._enable_overrides
+                else self._confidence
+            )
+            if conf < target_conf:
                 continue
 
             xyxy = box.xyxy[0].tolist()

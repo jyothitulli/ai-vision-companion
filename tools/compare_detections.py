@@ -28,6 +28,7 @@ def main() -> None:
     parser.add_argument("--mode", type=str, default="look", choices=["look", "ask", "find", "read"], help="Interaction mode")
     parser.add_argument("--question", type=str, default="What do you see?", help="Question for ask mode")
     parser.add_argument("--target", type=str, default=None, help="Target for find mode")
+    parser.add_argument("--save-annotated", type=str, default=None, help="Path to save annotated visualization image")
     args = parser.parse_args()
 
     img_path = Path(args.image)
@@ -64,8 +65,9 @@ def main() -> None:
         print("  None detected.")
     for i, obj in enumerate(result.objects, 1):
         rel_str = f" | Relations: {', '.join(obj.relationships)}" if getattr(obj, "relationships", []) else ""
+        trk_str = f" | Track ID: {obj.track_id}" if obj.track_id is not None else ""
         print(f"{i}. {obj.type.upper()}")
-        print(f"   Confidence: {obj.confidence:.2f}")
+        print(f"   Confidence: {obj.confidence:.2f}{trk_str}")
         print(f"   Position: {obj.position.value}")
         print(f"   Depth: approximately {obj.distance_range} ({obj.distance_band.value})")
         print(f"   Path Relevance: {obj.path_relevance.value}{rel_str}")
@@ -73,7 +75,6 @@ def main() -> None:
     print("\nPotentially Missed Requested / Accessibility Classes:")
     print("-" * 60)
     detected_types = {obj.type.lower() for obj in result.objects}
-    # Check accessibility vocabulary
     notable_to_check = ["stairs_up", "stairs_down", "door", "curb", "ramp", "crosswalk", "person", "chair", "table", "phone", "bottle"]
     for cls_name in notable_to_check:
         meta = ACCESSIBILITY_CLASSES.get(cls_name, {})
@@ -93,6 +94,33 @@ def main() -> None:
         print(f"  {stage:<18}: {ms:6.1f} ms")
     print(f"  {'Total':<18}: {total_ms:6.1f} ms")
     print("=" * 60 + "\n")
+
+    # Optional annotated visualization export
+    if args.save_annotated:
+        annotated = image_bgr.copy()
+        for obj in result.objects:
+            x1 = int(obj.bbox.x * w)
+            y1 = int(obj.bbox.y * h)
+            x2 = int((obj.bbox.x + obj.bbox.width) * w)
+            y2 = int((obj.bbox.y + obj.bbox.height) * h)
+
+            # Color code: Red for high hazard, Orange for medium, Green for safe/low
+            color = (0, 0, 255) if obj.path_relevance.value == "high" else (0, 165, 255) if obj.path_relevance.value == "medium" else (0, 220, 0)
+            cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
+
+            # Label banner
+            trk_tag = f" | TRK {obj.track_id}" if obj.track_id is not None else ""
+            label = f"{obj.type.upper()} {obj.confidence:.2f} | {obj.position.value.upper()} | {obj.distance_band.value.upper()}{trk_tag}"
+            
+            (tw, th), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
+            label_y = max(y1 - 6, th + 6)
+            cv2.rectangle(annotated, (x1, label_y - th - baseline), (x1 + tw + 4, label_y + baseline), color, -1)
+            cv2.putText(annotated, label, (x1 + 2, label_y - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
+
+        out_path = Path(args.save_annotated)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        cv2.imwrite(str(out_path), annotated)
+        print(f"Annotated debug visualization saved to: {out_path}")
 
 
 if __name__ == "__main__":
