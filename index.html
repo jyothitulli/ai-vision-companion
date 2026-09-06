@@ -210,6 +210,8 @@
     }
     .btn {
       min-height: 62px;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
       border-radius: 12px;
       background: var(--surface);
       border: 2.5px solid var(--accent);
@@ -465,7 +467,7 @@
 
     <!-- Camera viewport -->
     <div class="viewport-card" id="viewportCard">
-      <video id="videoElement" autoplay playsinline muted></video>
+      <video id="videoElement" autoplay playsinline webkit-playsinline muted></video>
       <canvas id="overlayCanvas"></canvas>
       <div class="camera-placeholder" id="cameraPlaceholder">
         <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -721,27 +723,57 @@
         };
         currentStream = await navigator.mediaDevices.getUserMedia(constraints);
         video.srcObject = currentStream;
+        video.setAttribute('playsinline', 'true');
+        video.setAttribute('webkit-playsinline', 'true');
+        video.muted = true;
+        try {
+          await video.play();
+        } catch (e) {
+          console.log('Video play deferred:', e);
+        }
         document.getElementById('cameraPlaceholder').style.display = 'none';
         video.onloadedmetadata = () => {
           canvas.width = video.videoWidth || 640;
           canvas.height = video.videoHeight || 480;
         };
+        return true;
       } catch (err) {
         console.warn('Camera access denied or unavailable:', err);
         setState('PERMISSION_REQUIRED');
         speak('Camera access not granted. You can use the file upload option below.');
+        return false;
+      }
+    }
+
+    function unlockAudio() {
+      if (window.speechSynthesis) {
+        const u = new SpeechSynthesisUtterance('');
+        u.volume = 0;
+        window.speechSynthesis.speak(u);
+      }
+    }
+
+    async function ensureCameraActive() {
+      if (!currentStream || (video.videoWidth === 0 && !lastUploadedBlob)) {
+        await initCamera();
       }
     }
 
     function captureBlobFromVideo() {
       return new Promise((resolve) => {
-        if (video && video.videoWidth > 0 && currentStream && currentStream.active) {
+        if (video && (video.videoWidth > 0 || video.readyState >= 2)) {
+          const w = video.videoWidth || 640;
+          const h = video.videoHeight || 480;
           const tempCanvas = document.createElement('canvas');
-          tempCanvas.width = video.videoWidth;
-          tempCanvas.height = video.videoHeight;
+          tempCanvas.width = w;
+          tempCanvas.height = h;
           const tempCtx = tempCanvas.getContext('2d');
-          tempCtx.drawImage(video, 0, 0);
-          tempCanvas.toBlob((blob) => resolve(blob), 'image/jpeg', 0.85);
+          tempCtx.drawImage(video, 0, 0, w, h);
+          tempCanvas.toBlob((blob) => {
+            if (blob) resolve(blob);
+            else if (lastUploadedBlob) resolve(lastUploadedBlob);
+            else resolve(null);
+          }, 'image/jpeg', 0.85);
           return;
         }
         if (lastUploadedBlob) {
@@ -850,6 +882,8 @@
     }
 
     async function runLookMode() {
+      unlockAudio();
+      await ensureCameraActive();
       let blob = await captureBlobFromVideo();
       if (!blob) {
         speak('Please enable camera or select an image file first.');
@@ -863,6 +897,8 @@
     }
 
     async function runReadMode() {
+      unlockAudio();
+      await ensureCameraActive();
       let blob = await captureBlobFromVideo();
       if (!blob) {
         speak('Please enable camera or select an image file first.');
@@ -935,7 +971,8 @@
       const q = document.getElementById('askInput').value.trim();
       if (!q) return;
       closeAskModal();
-
+      unlockAudio();
+      await ensureCameraActive();
       let blob = await captureBlobFromVideo();
       if (!blob) {
         speak('Please enable camera or choose an image file first.');
@@ -963,7 +1000,8 @@
       const target = document.getElementById('findInput').value.trim();
       if (!target) return;
       closeFindModal();
-
+      unlockAudio();
+      await ensureCameraActive();
       let blob = await captureBlobFromVideo();
       if (!blob) {
         speak('Please enable camera or choose an image file first.');

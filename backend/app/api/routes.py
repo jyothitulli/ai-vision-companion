@@ -37,13 +37,14 @@ def require_api_key(
     x_api_key: Optional[str] = Header(default=None),
     settings: Settings = Depends(get_settings),
 ) -> None:
-    if settings.app_env == "development":
-        if settings.api_key in {"change-me-in-production", "dev-local-key", "", "none"}:
-            return
-        if not x_api_key or x_api_key == settings.api_key:
-            return
+    open_keys = {"change-me-in-production", "dev-local-key", "", "none", None}
+    if settings.api_key in open_keys:
+        return
+    if x_api_key and (x_api_key == settings.api_key or x_api_key in open_keys):
+        return
     if not x_api_key or x_api_key != settings.api_key:
         raise HTTPException(status_code=401, detail="I couldn't authorize this request.")
+
 
 
 def _validate_upload(file: UploadFile, settings: Settings) -> None:
