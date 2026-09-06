@@ -68,13 +68,19 @@ class Settings(BaseSettings):
         return path
 
     def resolved_database_url(self) -> str:
-        if self.database_url:
-            return self.database_url
+        if self.database_url and self.database_url.strip():
+            url = self.database_url.strip()
+            if url.startswith("postgres://"):
+                url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+            elif url.startswith("postgresql://") and not url.startswith("postgresql+"):
+                url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+            return url
         if not self.enable_sqlite_fallback:
             raise RuntimeError("DATABASE_URL is required when SQLite fallback is disabled.")
         sqlite_path = Path(self.sqlite_path)
         if not sqlite_path.is_absolute():
-            sqlite_path = self.project_root / sqlite_path
+            base_dir = self.project_root if (self.project_root / "backend").exists() else Path(__file__).resolve().parents[1]
+            sqlite_path = base_dir / sqlite_path
         sqlite_path.parent.mkdir(parents=True, exist_ok=True)
         return f"sqlite+aiosqlite:///{sqlite_path.as_posix()}"
 
