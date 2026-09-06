@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Vision Companion",
-    "slug": "vision-companion",
+    "name": "Around You",
+    "slug": "around-you",
     "version": "0.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",

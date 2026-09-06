@@ -30,7 +30,7 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(
-    title="Vision Companion API",
+    title="Around You API",
     version="0.1.0",
     lifespan=lifespan,
     docs_url="/docs" if settings.app_env != "production" else None,
@@ -75,7 +75,7 @@ async def root(request: Request):
     index_path = STATIC_DIR / "index.html"
     if "text/html" in accept and index_path.is_file():
         return FileResponse(index_path)
-    return {"name": "Vision Companion", "docs": "/docs", "health": "/api/health", "app": "/app"}
+    return {"name": "Around You", "tagline": "Understand the world around you.", "docs": "/docs", "health": "/api/health", "app": "/app"}
 
 
 @app.get("/app")

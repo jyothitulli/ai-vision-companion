@@ -1,4 +1,6 @@
-# Vision Companion
+# Around You
+
+> **Understand the world around you.**
 
 AI-powered multimodal assistive perception for visually impaired people.
 
@@ -6,7 +8,7 @@ This is not a guaranteed navigation or collision-avoidance system. It never tell
 
 ## Problem
 
-A visually impaired person cannot easily understand the visual environment. Vision Companion turns a smartphone camera plus speech into spoken spatial descriptions:
+A visually impaired person cannot easily understand the visual environment. Around You turns a smartphone camera plus speech into spoken spatial descriptions:
 
 - What is in front of me?
 - Where is the door?
