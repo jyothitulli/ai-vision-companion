@@ -37,7 +37,10 @@ def get_speech() -> WhisperRecognizer:
 
 def warmup() -> None:
     try:
-        get_pipeline()
+        pipeline = get_pipeline()
+        import numpy as np
+        dummy = np.zeros((480, 480, 3), dtype=np.uint8)
+        pipeline.runtime.detector.detect(dummy)
         logger.info("vision_pipeline_ready")
     except Exception:
         logger.exception("vision_pipeline_warmup_failed")

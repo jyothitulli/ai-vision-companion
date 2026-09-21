@@ -767,8 +767,13 @@
     function captureBlobFromVideo() {
       return new Promise((resolve) => {
         if (video && (video.videoWidth > 0 || video.readyState >= 2)) {
-          const w = video.videoWidth || 640;
-          const h = video.videoHeight || 480;
+          const rawW = video.videoWidth || 640;
+          const rawH = video.videoHeight || 480;
+          const maxSide = 480;
+          const scale = Math.min(1.0, maxSide / Math.max(rawW, rawH));
+          const w = Math.round(rawW * scale);
+          const h = Math.round(rawH * scale);
+
           const tempCanvas = document.createElement('canvas');
           tempCanvas.width = w;
           tempCanvas.height = h;
@@ -778,7 +783,7 @@
             if (blob) resolve(blob);
             else if (lastUploadedBlob) resolve(lastUploadedBlob);
             else resolve(null);
-          }, 'image/jpeg', 0.85);
+          }, 'image/jpeg', 0.75);
           return;
         }
         if (lastUploadedBlob) {
@@ -791,18 +796,24 @@
 
     function speak(text) {
       if (!text || !ttsSynth) return;
-      ttsSynth.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 0.95;
-      utterance.pitch = 1.0;
-      utterance.onstart = () => setState('SPEAKING');
-      utterance.onend = () => setState(isContinuousAssistance ? 'CONTINUOUS_ASSISTANCE' : 'IDLE');
-      utterance.onerror = () => setState(isContinuousAssistance ? 'CONTINUOUS_ASSISTANCE' : 'IDLE');
-      ttsSynth.speak(utterance);
+      try {
+        ttsSynth.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 0.95;
+        utterance.pitch = 1.0;
+        utterance.onstart = () => setState('SPEAKING');
+        utterance.onend = () => setState(isContinuousAssistance ? 'CONTINUOUS_ASSISTANCE' : 'IDLE');
+        utterance.onerror = () => setState(isContinuousAssistance ? 'CONTINUOUS_ASSISTANCE' : 'IDLE');
+        ttsSynth.speak(utterance);
+      } catch (e) {
+        console.warn('TTS error:', e);
+      }
     }
 
     function stopSpeech() {
-      if (ttsSynth) ttsSynth.cancel();
+      if (ttsSynth) {
+        try { ttsSynth.cancel(); } catch (_) {}
+      }
       setState(isContinuousAssistance ? 'CONTINUOUS_ASSISTANCE' : 'IDLE');
     }
 
@@ -840,7 +851,16 @@
 
     async function sendVisionRequest(endpoint, formData) {
       setState('PROCESSING');
+      answerText.textContent = 'Analyzing surroundings...';
       const start = performance.now();
+
+      // Show friendly message if cloud server was sleeping
+      const wakeTimer = setTimeout(() => {
+        if (stateText.textContent === 'PROCESSING') {
+          answerText.textContent = 'Connecting to server (free cloud instance waking up, please wait)...';
+        }
+      }, 4000);
+
       try {
         const res = await fetch(`${API_BASE}${endpoint}`, {
           method: 'POST',
@@ -849,6 +869,7 @@
           },
           body: formData
         });
+        clearTimeout(wakeTimer);
         const data = await res.json();
         const duration = Math.round(performance.now() - start);
         latencyText.textContent = `${duration}ms (${data.processing_time_ms || 0}ms pipeline)`;
@@ -879,9 +900,11 @@
           return data;
         }
       } catch (err) {
+        clearTimeout(wakeTimer);
         console.error('Vision request error:', err);
-        answerText.textContent = "I couldn't reach the server. Make sure the backend is running.";
-        speak("I couldn't reach the server. Make sure the backend is running.");
+        const errMsg = "I couldn't reach the server. Make sure the backend is running.";
+        answerText.textContent = errMsg;
+        speak(errMsg);
         setState('ERROR');
       }
     }
@@ -899,7 +922,9 @@
         await ensureCameraActive();
         let blob = await captureBlobFromVideo();
         if (!blob) {
-          speak('Please enable camera or select an image file first.');
+          const msg = 'Please enable camera or select an image file first.';
+          answerText.textContent = msg;
+          speak(msg);
           return;
         }
         setState('CAPTURING');

@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     device: str = "cpu"
     yolo_model: str = "yolo11n.pt"
     yolo_world_model: str = "yolov8s-worldv2.pt"
-    yolo_confidence: float = 0.35
+    yolo_confidence: float = 0.25
     depth_model: str = "depth-anything/Depth-Anything-V2-Small-hf"
     whisper_model: str = "tiny"
     enable_ocr: bool = True
