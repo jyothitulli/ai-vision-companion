@@ -6,6 +6,7 @@ export const colors = {
   muted: "#A8B3C2",
   danger: "#E85D4C",
   ok: "#3DDC97",
+  border: "#2C394B",
 };
 
 export const hitSlop = { top: 12, bottom: 12, left: 12, right: 12 };

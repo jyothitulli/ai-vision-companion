@@ -5,16 +5,19 @@ import {
   AccessibilityInfo,
   Pressable,
   SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
 import { healthCheck, postSession, transcribe, uploadFrame } from "./src/api/client";
-import { recordUtterance } from "./src/speech/stt";
+import { cancelRecording, recordUtterance } from "./src/speech/stt";
 import { speak, stopSpeaking } from "./src/speech/tts";
+import { parseVoiceCommand } from "./src/speech/commands";
 import { AppStateName, stateAnnouncement } from "./src/state/appState";
 import { colors } from "./src/theme";
 import { SettingsScreen } from "./src/screens/SettingsScreen";
+import { HelpScreen } from "./src/screens/HelpScreen";
 
 const SESSION_ID = "mobile-default";
 
@@ -24,19 +27,39 @@ export default function App() {
   const cameraRef = useRef<CameraView>(null);
   const [permission, requestPermission] = useCameraPermissions();
   const [appState, setAppState] = useState<AppStateName>("IDLE");
-  const [statusLine, setStatusLine] = useState("Ready.");
+  const [statusLine, setStatusLine] = useState("Vision assistant ready.");
+  const [lastSpokenAnswer, setLastSpokenAnswer] = useState<string>(
+    "Vision assistant ready. How can I help?",
+  );
   const [backendUp, setBackendUp] = useState<boolean | null>(null);
+  const [cameraEnabled, setCameraEnabled] = useState(true);
   const [assistanceOn, setAssistanceOn] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
+
   const assistanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const assistanceActiveRef = useRef(false);
   const isAssistanceLoopRunning = useRef(false);
   const isLookRunning = useRef(false);
+  const hasGreetedRef = useRef(false);
 
+  // Initial startup: check backend health and announce greeting
   useEffect(() => {
-    healthCheck().then(setBackendUp);
+    healthCheck().then((up) => {
+      setBackendUp(up);
+      if (!hasGreetedRef.current) {
+        hasGreetedRef.current = true;
+        const greeting = up
+          ? "Vision assistant ready. How can I help?"
+          : "Vision assistant ready. Note: backend server is currently unreachable.";
+        setLastSpokenAnswer(greeting);
+        setStatusLine(greeting);
+        void speak(greeting);
+      }
+    });
   }, []);
 
+  // Announce state transitions for TalkBack / VoiceOver
   useEffect(() => {
     AccessibilityInfo.announceForAccessibility(stateAnnouncement[appState]);
   }, [appState]);
@@ -51,13 +74,25 @@ export default function App() {
     return appState.replaceAll("_", " ");
   }, [appState, backendUp, permission?.granted]);
 
+  async function speakAndSave(text: string) {
+    setLastSpokenAnswer(text);
+    setStatusLine(text);
+    setAppState("SPEAKING");
+    await speak(text);
+    setAppState(assistanceActiveRef.current ? "CONTINUOUS_ASSISTANCE" : "IDLE");
+  }
+
   async function captureUri(): Promise<string | null> {
-    if (!cameraRef.current) {
+    if (!cameraRef.current || !cameraEnabled) {
       return null;
     }
     setAppState("CAPTURING");
-    const photo = await cameraRef.current.takePictureAsync({ quality: 0.6, skipProcessing: true });
-    return photo?.uri ?? null;
+    try {
+      const photo = await cameraRef.current.takePictureAsync({ quality: 0.6, skipProcessing: true });
+      return photo?.uri ?? null;
+    } catch {
+      return null;
+    }
   }
 
   async function runMode(mode: Mode, extra: Record<string, string> = {}) {
@@ -68,15 +103,22 @@ export default function App() {
     try {
       if (!permission?.granted) {
         setAppState("PERMISSION_REQUIRED");
-        await speak("Camera permission is required.");
+        await speakAndSave("Camera permission is required to analyze surroundings.");
         return;
       }
+      if (!cameraEnabled) {
+        setAppState("IDLE");
+        await speakAndSave("Camera is currently closed. Say open camera or tap the camera button to enable it.");
+        return;
+      }
+
       const uri = await captureUri();
       if (!uri) {
         setAppState("ERROR");
-        await speak("I couldn't capture a photo.");
+        await speakAndSave("I couldn't capture a frame. Make sure the camera is open and try again.");
         return;
       }
+
       setAppState("PROCESSING");
       setStatusLine("Processing the scene.");
       const path =
@@ -89,17 +131,13 @@ export default function App() {
               : mode === "find"
                 ? "/api/vision/find"
                 : "/api/assistance/frame";
+
       const result = await uploadFrame(uri, path, { session_id: SESSION_ID, ...extra });
-      const answer = result.answer || "I couldn't process the image. Please try again.";
-      setStatusLine(answer);
-      setAppState("SPEAKING");
-      await speak(answer);
-      setAppState(assistanceActiveRef.current ? "CONTINUOUS_ASSISTANCE" : "IDLE");
+      const answer = result.answer || "I couldn't detect anything clearly in front of you.";
+      await speakAndSave(answer);
     } catch {
       setAppState("ERROR");
-      setStatusLine("I couldn't process the image. Please try again.");
-      await speak("I couldn't process the image. Please try again.");
-      setAppState(assistanceActiveRef.current ? "CONTINUOUS_ASSISTANCE" : "IDLE");
+      await speakAndSave("I couldn't reach the server. Please check your connection and try again.");
     } finally {
       if (mode === "look") {
         isLookRunning.current = false;
@@ -107,64 +145,122 @@ export default function App() {
     }
   }
 
-  async function voiceCommand() {
+  async function startListening() {
+    // If speaking, silence first
+    stopSpeaking();
+
     setAppState("LISTENING");
-    setStatusLine("Listening.");
+    setStatusLine("Listening. Speak your command now.");
     await speak("Listening.");
+
     const uri = await recordUtterance();
     if (!uri) {
-      setAppState("PERMISSION_REQUIRED");
-      await speak("Microphone permission is required.");
+      // Could be cancelled or permission denied
+      if (appState === "LISTENING") {
+        setAppState("IDLE");
+        setStatusLine("Listening stopped.");
+      }
       return;
     }
-    const text = (await transcribe(uri)).toLowerCase();
-    if (!text.trim()) {
-      await speak("I didn't catch that.");
-      setAppState("IDLE");
-      return;
+
+    setAppState("PROCESSING");
+    setStatusLine("Transcribing voice command...");
+    const rawText = await transcribe(uri);
+    const command = parseVoiceCommand(rawText);
+
+    switch (command.type) {
+      case "STOP":
+        handleStopSpeaking();
+        break;
+
+      case "REPEAT":
+        handleRepeatResponse();
+        break;
+
+      case "HELP":
+        setShowHelp(true);
+        setShowSettings(false);
+        await speakAndSave(
+          "Help opened. You can say look, find my object, read this, repeat, or stop.",
+        );
+        break;
+
+      case "SETTINGS":
+        setShowSettings(true);
+        setShowHelp(false);
+        await speakAndSave("Settings opened.");
+        break;
+
+      case "BACK":
+        setShowHelp(false);
+        setShowSettings(false);
+        await speakAndSave("Back to main vision screen.");
+        break;
+
+      case "OPEN_CAMERA":
+        setCameraEnabled(true);
+        await speakAndSave("Camera is now open.");
+        break;
+
+      case "CLOSE_CAMERA":
+        setCameraEnabled(false);
+        await speakAndSave("Camera is now closed.");
+        break;
+
+      case "START_ASSISTANCE":
+        await toggleAssistance(true);
+        break;
+
+      case "STOP_ASSISTANCE":
+        await toggleAssistance(false);
+        break;
+
+      case "LOOK":
+        await runMode("look");
+        break;
+
+      case "FIND":
+        await runMode("find", { target: command.target });
+        break;
+
+      case "READ":
+        await runMode("read", { question: command.question || "Read this." });
+        break;
+
+      case "ASK":
+        await runMode("ask", { question: command.question });
+        break;
+
+      case "UNKNOWN":
+      default:
+        await speakAndSave("I didn't catch that. Say look, find, read, repeat, or help.");
+        break;
     }
-    if (text.includes("start assistance")) {
-      await toggleAssistance(true);
-      return;
-    }
-    if (text.includes("stop assistance")) {
-      await toggleAssistance(false);
-      return;
-    }
-    if (text.includes("read")) {
-      await runMode("read", { question: text });
-      return;
-    }
-    if (text.includes("find")) {
-      const target = text.replace("find my", "").replace("find", "").trim() || "bottle";
-      await runMode("find", { target });
-      return;
-    }
-    if (text.includes("settings")) {
-      setShowSettings(true);
-      await speak("Settings.");
-      setAppState("IDLE");
-      return;
-    }
-    if (text.trim() === "look" || text.includes("what's around")) {
-      await runMode("look");
-      return;
-    }
-    await runMode("ask", { question: text });
   }
 
-  async function findByVoice() {
-    setAppState("LISTENING");
-    await speak("What should I find?");
-    const uri = await recordUtterance();
-    if (!uri) {
-      setAppState("PERMISSION_REQUIRED");
-      await speak("Microphone permission is required.");
+  async function stopListeningAction() {
+    await cancelRecording();
+    setAppState("IDLE");
+    setStatusLine("Listening stopped.");
+    await speak("Listening stopped.");
+  }
+
+  function handleStopSpeaking() {
+    stopSpeaking();
+    if (assistanceTimer.current) {
+      clearTimeout(assistanceTimer.current);
+      assistanceTimer.current = null;
+    }
+    setAppState(assistanceOn ? "CONTINUOUS_ASSISTANCE" : "IDLE");
+    setStatusLine("Speech stopped.");
+  }
+
+  function handleRepeatResponse() {
+    if (!lastSpokenAnswer) {
+      void speak("No previous response to repeat.");
       return;
     }
-    const text = (await transcribe(uri)).toLowerCase();
-    const target = text.replace("find my", "").replace("find", "").trim() || "bottle";
-    await runMode("find", { target });
+    void speak(lastSpokenAnswer);
   }
 
   async function startAssistanceLoop() {
@@ -172,7 +268,7 @@ export default function App() {
     isAssistanceLoopRunning.current = true;
     try {
       while (assistanceActiveRef.current) {
-        if (!permission?.granted) break;
+        if (!permission?.granted || !cameraEnabled) break;
         await runMode("assistance");
         if (!assistanceActiveRef.current) break;
         await new Promise((resolve) => {
@@ -199,29 +295,31 @@ export default function App() {
     if (!on) {
       await postSession("/api/assistance/stop", SESSION_ID);
       setAppState("IDLE");
-      await speak("Continuous assistance is off.");
+      await speakAndSave("Continuous assistance is off.");
       return;
     }
     await postSession("/api/assistance/start", SESSION_ID);
     setAppState("CONTINUOUS_ASSISTANCE");
-    await speak("Continuous assistance is on. I will only announce important changes.");
+    await speakAndSave("Continuous assistance is on. I will announce important scene changes.");
     void startAssistanceLoop();
   }
 
   if (!permission) {
     return <View style={styles.screen} />;
   }
+
   if (!permission.granted) {
     return (
       <SafeAreaView style={styles.screen}>
         <Text style={styles.title} accessibilityRole="header">
           VISION COMPANION
         </Text>
-        <Text style={styles.status}>Camera permission is required.</Text>
+        <Text style={styles.status}>Camera permission is required to assist you.</Text>
         <Pressable
-          style={styles.button}
+          style={styles.actionButton}
           accessibilityRole="button"
           accessibilityLabel="Grant camera permission"
+          accessibilityHint="Allows the app to capture photos and identify objects"
           onPress={requestPermission}
         >
           <Text style={styles.buttonText}>GRANT PERMISSION</Text>
@@ -233,70 +331,230 @@ export default function App() {
   return (
     <SafeAreaView style={styles.screen}>
       <StatusBar style="light" />
-      <Text style={styles.title} accessibilityRole="header">
-        VISION COMPANION
-      </Text>
-      <Text
-        style={styles.status}
+
+      {/* Header */}
+      <View style={styles.header}>
+        <Text style={styles.title} accessibilityRole="header">
+          VISION COMPANION
+        </Text>
+      </View>
+
+      {/* Status Live Region */}
+      <View
+        style={styles.statusBox}
+        accessible={true}
         accessibilityRole="text"
         accessibilityLiveRegion="polite"
-        accessibilityLabel={`Listening status ${listeningLabel}. ${statusLine}`}
+        accessibilityLabel={`Status: ${listeningLabel}. ${statusLine}`}
       >
-        LISTENING STATUS: {listeningLabel}
-      </Text>
-      {showSettings ? (
+        <Text style={styles.statusHeader}>STATUS: {listeningLabel}</Text>
+        <Text style={styles.statusText} numberOfLines={3}>
+          {statusLine}
+        </Text>
+      </View>
+
+      {/* Main Content Area */}
+      {showHelp ? (
+        <HelpScreen onClose={() => setShowHelp(false)} />
+      ) : showSettings ? (
         <SettingsScreen onClose={() => setShowSettings(false)} />
       ) : (
-        <CameraView ref={cameraRef} style={styles.camera} facing="back" accessible={false} />
+        <View style={styles.mainArea}>
+          {cameraEnabled ? (
+            <CameraView
+              ref={cameraRef}
+              style={styles.camera}
+              facing="back"
+              accessible={false}
+              importantForAccessibility="no"
+            />
+          ) : (
+            <View style={styles.cameraPlaceholder} accessible={false}>
+              <Text style={styles.placeholderText}>Camera is closed</Text>
+            </View>
+          )}
+
+          {/* Action Button Grid */}
+          <ScrollView contentContainerStyle={styles.controlsScroll} showsVerticalScrollIndicator={false}>
+            {/* 1. Voice Controls */}
+            {appState === "LISTENING" ? (
+              <AccessibleButton
+                label="STOP LISTENING"
+                hint="Cancel active voice listening"
+                highlight
+                onPress={() => void stopListeningAction()}
+              />
+            ) : (
+              <AccessibleButton
+                label="START LISTENING"
+                hint="Start listening for voice commands such as look, find, or read"
+                highlight
+                onPress={() => void startListening()}
+              />
+            )}
+
+            {/* 2. Direct Capture & Analyze */}
+            <AccessibleButton
+              label="CAPTURE & ANALYZE"
+              hint="Take a picture now and announce objects and surroundings"
+              onPress={() => void runMode("look")}
+            />
+
+            {/* 3. Repeat Response */}
+            <AccessibleButton
+              label="REPEAT RESPONSE"
+              hint="Replay the last spoken description or answer"
+              onPress={handleRepeatResponse}
+            />
+
+            {/* 4. Stop Speaking */}
+            <AccessibleButton
+              label="STOP SPEAKING"
+              hint="Immediately silence the speech assistant"
+              onPress={handleStopSpeaking}
+            />
+
+            {/* 5. Camera Toggle */}
+            <AccessibleButton
+              label={cameraEnabled ? "CLOSE CAMERA" : "OPEN CAMERA"}
+              hint={cameraEnabled ? "Turn off camera preview to save power" : "Turn on camera preview"}
+              onPress={() => {
+                const next = !cameraEnabled;
+                setCameraEnabled(next);
+                void speak(next ? "Camera opened." : "Camera closed.");
+              }}
+            />
+
+            {/* 6. Continuous Assistance Toggle */}
+            <AccessibleButton
+              label={assistanceOn ? "STOP ASSISTANCE" : "START ASSISTANCE"}
+              hint="Toggle continuous scene monitoring"
+              onPress={() => void toggleAssistance(!assistanceOn)}
+            />
+
+            {/* 7. Help */}
+            <AccessibleButton
+              label="HELP"
+              hint="Open spoken guide and list of voice commands"
+              onPress={() => {
+                setShowHelp(true);
+                setShowSettings(false);
+              }}
+            />
+
+            {/* 8. Settings */}
+            <AccessibleButton
+              label="SETTINGS"
+              hint="Adjust backend server and voice settings"
+              onPress={() => {
+                setShowSettings(true);
+                setShowHelp(false);
+              }}
+            />
+          </ScrollView>
+        </View>
       )}
-      <View style={styles.grid}>
-        <ModeButton label="LOOK" hint="Describe the current view" onPress={() => void runMode("look")} />
-        <ModeButton label="ASK" hint="Ask a question about the view" onPress={() => void voiceCommand()} />
-        <ModeButton
-          label={assistanceOn ? "STOP ASSISTANCE" : "START ASSISTANCE"}
-          hint="Toggle continuous assistance"
-          onPress={() => void toggleAssistance(!assistanceOn)}
-        />
-        <ModeButton label="READ" hint="Read visible text" onPress={() => void runMode("read", { question: "Read this." })} />
-        <ModeButton label="FIND OBJECT" hint="Find a nearby object by voice" onPress={() => void findByVoice()} />
-        <ModeButton label="VOICE" hint="Start voice command" onPress={() => void voiceCommand()} />
-        <ModeButton label="SETTINGS" hint="Open settings" onPress={() => setShowSettings(true)} />
-      </View>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Stop speaking"
-        onPress={() => {
-          stopSpeaking();
-          setAppState(assistanceOn ? "CONTINUOUS_ASSISTANCE" : "IDLE");
-        }}
-      >
-        <Text style={styles.muted}>Tap to stop speech. Primary interaction is voice.</Text>
-      </Pressable>
     </SafeAreaView>
   );
 }
 
-function ModeButton({ label, hint, onPress }: { label: string; hint: string; onPress: () => void }) {
+function AccessibleButton({
+  label,
+  hint,
+  highlight = false,
+  onPress,
+}: {
+  label: string;
+  hint: string;
+  highlight?: boolean;
+  onPress: () => void;
+}) {
   return (
     <Pressable
-      style={styles.button}
+      style={[styles.actionButton, highlight && styles.actionButtonHighlight]}
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityHint={hint}
     >
-      <Text style={styles.buttonText}>{label}</Text>
+      <Text style={[styles.buttonText, highlight && styles.buttonTextHighlight]}>{label}</Text>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.bg, padding: 16, gap: 10 },
-  title: { color: colors.accent, fontSize: 28, fontWeight: "800", letterSpacing: 1 },
-  status: { color: colors.text, fontSize: 18, fontWeight: "600" },
-  camera: { flex: 1, minHeight: 180, borderRadius: 12, overflow: "hidden" },
-  grid: { gap: 10 },
-  button: {
+  screen: {
+    flex: 1,
+    backgroundColor: colors.bg,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 16,
+  },
+  header: {
+    paddingVertical: 6,
+  },
+  title: {
+    color: colors.accent,
+    fontSize: 26,
+    fontWeight: "900",
+    letterSpacing: 1,
+  },
+  statusBox: {
+    backgroundColor: colors.surface,
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    marginVertical: 6,
+    minHeight: 68,
+    justifyContent: "center",
+  },
+  statusHeader: {
+    color: colors.accent,
+    fontSize: 15,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+  },
+  statusText: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: "600",
+    marginTop: 2,
+  },
+  status: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: "600",
+    marginVertical: 12,
+  },
+  mainArea: {
+    flex: 1,
+    gap: 8,
+  },
+  camera: {
+    height: 140,
+    borderRadius: 10,
+    overflow: "hidden",
+  },
+  cameraPlaceholder: {
+    height: 80,
+    borderRadius: 10,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  placeholderText: {
+    color: colors.muted,
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  controlsScroll: {
+    gap: 8,
+    paddingVertical: 6,
+  },
+  actionButton: {
     backgroundColor: colors.surface,
     minHeight: 56,
     borderRadius: 12,
@@ -304,8 +562,19 @@ const styles = StyleSheet.create({
     borderColor: colors.accent,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 12,
+    paddingHorizontal: 16,
   },
-  buttonText: { color: colors.text, fontSize: 20, fontWeight: "800" },
-  muted: { color: colors.muted, fontSize: 14, textAlign: "center", marginBottom: 8 },
+  actionButtonHighlight: {
+    backgroundColor: colors.accent,
+    borderColor: "#FFFFFF",
+  },
+  buttonText: {
+    color: colors.text,
+    fontSize: 19,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+  },
+  buttonTextHighlight: {
+    color: "#05070B",
+  },
 });
