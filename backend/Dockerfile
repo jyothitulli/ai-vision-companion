@@ -12,7 +12,7 @@ ENV OMP_NUM_THREADS=1 \
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu \
     && pip install --no-cache-dir -r /app/requirements.txt
-COPY yolo11n.pt /app/yolo11n.pt
 COPY app /app/app
+RUN python -c "import urllib.request; urllib.request.urlretrieve('https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11n.pt', '/app/yolo11n.pt')"
 EXPOSE 8000
 CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
