@@ -1,0 +1,38 @@
+{
+  "name": "Around You — AI Vision Companion",
+  "short_name": "Around You",
+  "description": "AI-powered multimodal assistive perception for visually impaired people with hands-free voice control.",
+  "start_url": "/app",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0a0e17",
+  "theme_color": "#ffd600",
+  "orientation": "portrait",
+  "categories": ["accessibility", "utilities"],
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Look Around",
+      "url": "/app?action=look",
+      "description": "Describe what is around you"
+    },
+    {
+      "name": "Continuous Assistance",
+      "url": "/app?action=assistance",
+      "description": "Start continuous visual assistance"
+    }
+  ]
+}

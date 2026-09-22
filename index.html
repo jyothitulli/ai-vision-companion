@@ -4,6 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Around You — Understand the world around you.</title>
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#0a0e17">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Around You">
+  <link rel="apple-touch-icon" href="/icon-192.png">
   <style>
     :root {
       --bg: #0a0e17;
@@ -422,6 +428,43 @@
       background: var(--accent-hover);
     }
 
+    /* Install App Button & Family Guide */
+    .btn-install {
+      background: var(--accent);
+      color: #000;
+      font-weight: 800;
+      font-size: 13px;
+      padding: 7px 14px;
+      border-radius: 9999px;
+      border: 2px solid #ffffff;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      letter-spacing: 0.5px;
+      animation: pulseInstall 2.5s infinite;
+      transition: transform 0.15s, background-color 0.15s;
+    }
+    .btn-install:hover {
+      background: var(--accent-hover);
+      transform: scale(1.04);
+    }
+    @keyframes pulseInstall {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(255, 214, 0, 0.5); }
+      50% { box-shadow: 0 0 0 8px rgba(255, 214, 0, 0); }
+    }
+    .family-guide-card {
+      background: var(--surface-elevated);
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--accent);
+      border-radius: 10px;
+      padding: 12px 16px;
+      font-size: 13px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+      margin-bottom: 2px;
+    }
+
     /* Safety footer */
     footer {
       margin-top: 24px;
@@ -443,6 +486,7 @@
         <p style="font-size: 13px; color: var(--text-secondary); font-weight: 500; margin-top: 2px;">Understand the world around you.</p>
       </div>
       <div style="display: flex; align-items: center; gap: 8px;">
+        <button id="btnInstallApp" class="btn-install" onclick="handleInstallApp()" aria-label="Install App on Phone" title="Download & Install as App">📲 DOWNLOAD APP</button>
         <div id="backendBadge" class="badge disconnected" aria-live="polite" onclick="openSettingsModal()" style="cursor: pointer;" title="Click to configure backend URL">
           <span class="badge-dot"></span>
           <span id="backendStatusText">Connecting...</span>
@@ -450,6 +494,20 @@
         <button id="settingsBtn" class="btn-settings" onclick="openSettingsModal()" aria-label="Connection Settings" title="Backend Settings">⚙️</button>
       </div>
     </header>
+
+    <div class="family-guide-card" id="familyGuideCard">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+        <div>
+          <strong style="color: var(--accent);">👨‍👩‍👧 Family & Caregiver Setup:</strong>
+          <span style="display: block; margin-top: 3px;">
+            1. Tap <strong>Download App</strong> above to add Around You to this phone's home screen.<br>
+            2. <strong>Voice Action:</strong> Say <em>"Hey Google, open Around You"</em> to launch hands-free!<br>
+            3. The app automatically announces <em>"Vision assistant ready"</em> and listens immediately.
+          </span>
+        </div>
+        <button onclick="document.getElementById('familyGuideCard').style.display='none'" style="background: transparent; border: none; color: var(--muted); cursor: pointer; font-size: 16px; padding-left: 8px;" title="Dismiss Guide">✕</button>
+      </div>
+    </div>
 
     <div id="backendSetupBanner" class="connection-banner" style="display: none;">
       <div>
@@ -495,7 +553,7 @@
         <span>SPOKEN OUTPUT</span>
         <span id="latencyText" style="color: var(--cyan); font-family: monospace;"></span>
       </div>
-      <div class="answer-text" id="answerText">Press LOOK or ASK to begin perception.</div>
+      <div class="answer-text" id="answerText">Press LOOK or speak a command to begin perception.</div>
       <div class="meta-badges" id="metaBadges">
         <span class="meta-tag path-clear" id="pathTag">Path: Ready</span>
         <span class="meta-tag" id="sceneTag">Scene: Unknown</span>
@@ -523,14 +581,45 @@
       <button class="btn" id="btnVoice" onclick="startVoiceInput()">
         <span>🎙️</span> VOICE COMMAND
       </button>
-      <button class="btn btn-stop-speech btn-full" onclick="stopSpeech()">
-        ⏹️ Tap to Stop Speech
+      <button class="btn" id="btnRepeat" onclick="repeatLastAnswer()">
+        <span>🔁</span> REPEAT RESPONSE
+      </button>
+      <button class="btn btn-stop-speech" onclick="stopSpeech()">
+        ⏹️ STOP SPEECH
       </button>
     </nav>
 
     <footer>
       <strong>Safety Rule:</strong> Assistive perception system only. Not a guaranteed navigation or collision-avoidance system. Monocular depth is relative; never cross roads solely based on perception audio.
     </footer>
+  </div>
+
+  <!-- Install App Modal -->
+  <div class="modal-backdrop" id="installModal">
+    <div class="modal-content">
+      <h3 class="modal-title">📲 Install Around You on Phone</h3>
+      <div id="installModalContent" style="color: var(--text-secondary); font-size: 14px; line-height: 1.6; margin: 12px 0;">
+        <p><strong>Android Phone / Chrome:</strong></p>
+        <p style="margin-top: 4px;">Tap the <em>Install Now</em> button below to add Around You directly to the home screen as an accessible standalone app.</p>
+        
+        <p style="margin-top: 12px;"><strong>iPhone / iPad (Safari):</strong></p>
+        <ol style="margin-left: 20px; margin-top: 4px;">
+          <li>Tap the <strong>Share</strong> button (square with arrow) at the bottom of Safari.</li>
+          <li>Scroll down and tap <strong>Add to Home Screen</strong>.</li>
+          <li>Tap <strong>Add</strong> at top right.</li>
+        </ol>
+
+        <div style="background: var(--surface); border: 1px solid var(--border-accent); border-radius: 8px; padding: 10px; margin-top: 14px;">
+          <strong style="color: var(--accent);">🗣️ Hands-Free Voice Action:</strong><br>
+          Once installed, the visually impaired user can say:
+          <em>"Hey Google, open Around You"</em> to launch the app hands-free anytime!
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-secondary" onclick="closeInstallModal()">Close</button>
+        <button class="btn-primary" id="btnTriggerNativeInstall" onclick="triggerPwaInstall()">Install Now</button>
+      </div>
+    </div>
   </div>
 
   <!-- Ask Question Modal -->
@@ -1107,11 +1196,138 @@
       sendVisionRequest('/api/vision/analyze', fd);
     }
 
-    // Voice Command (Web Speech API)
+    // PWA Install Handling
+    let deferredInstallPrompt = null;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredInstallPrompt = e;
+      const btn = document.getElementById('btnInstallApp');
+      if (btn) {
+        btn.textContent = '📲 INSTALL AS APP';
+        btn.style.display = 'inline-flex';
+      }
+    });
+
+    function handleInstallApp() {
+      if (deferredInstallPrompt) {
+        triggerPwaInstall();
+      } else {
+        openInstallModal();
+      }
+    }
+
+    function openInstallModal() {
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+      const triggerBtn = document.getElementById('btnTriggerNativeInstall');
+      if (triggerBtn) {
+        triggerBtn.style.display = deferredInstallPrompt ? 'inline-block' : 'none';
+      }
+      document.getElementById('installModal').classList.add('open');
+      speak('To install, follow the steps on screen or tap Install.');
+    }
+
+    function closeInstallModal() {
+      document.getElementById('installModal').classList.remove('open');
+    }
+
+    async function triggerPwaInstall() {
+      if (deferredInstallPrompt) {
+        deferredInstallPrompt.prompt();
+        const { outcome } = await deferredInstallPrompt.userChoice;
+        if (outcome === 'accepted') {
+          speak('Around You is now installed on your home screen.');
+          closeInstallModal();
+          const btn = document.getElementById('btnInstallApp');
+          if (btn) btn.style.display = 'none';
+        }
+        deferredInstallPrompt = null;
+      } else {
+        closeInstallModal();
+      }
+    }
+
+    window.addEventListener('appinstalled', () => {
+      speak('Around You was added to your home screen.');
+      const btn = document.getElementById('btnInstallApp');
+      if (btn) btn.style.display = 'none';
+      deferredInstallPrompt = null;
+    });
+
+    // Spoken Repeat & Response Caching
+    let lastSpokenAnswer = "Vision assistant ready. How can I help?";
+    
+    function speakAndSave(text) {
+      lastSpokenAnswer = text;
+      speak(text);
+    }
+
+    function repeatLastAnswer() {
+      if (!lastSpokenAnswer) {
+        speak('No previous response to repeat.');
+        return;
+      }
+      speak(lastSpokenAnswer);
+    }
+
+    // Hands-Free Natural Voice Command Parser
+    function handleVoiceCommand(rawText) {
+      const text = rawText.trim().toLowerCase();
+      console.log('Voice command received:', text);
+
+      if (text === 'stop' || text === 'cancel' || text === 'be quiet' || text === 'shut up') {
+        stopSpeech();
+        setState('IDLE');
+        return;
+      }
+
+      if (text.includes('repeat') || text.includes('say that again') || text === 'say again') {
+        repeatLastAnswer();
+        return;
+      }
+
+      if (text.includes('start assistance') || text.includes('turn on assistance')) {
+        if (!isContinuousAssistance) toggleAssistance();
+        return;
+      }
+
+      if (text.includes('stop assistance') || text.includes('turn off assistance')) {
+        if (isContinuousAssistance) toggleAssistance();
+        return;
+      }
+
+      if (text.startsWith('read') || text.includes('read this') || text.includes('read text')) {
+        runReadMode();
+        return;
+      }
+
+      if (text.startsWith('find ') || text.startsWith('where is ') || text.startsWith("where's ") || text.startsWith('locate ')) {
+        let target = text
+          .replace(/^find\s+(my\s+|the\s+|a\s+)?/, '')
+          .replace(/^where\s+is\s+(my\s+|the\s+|a\s+)?/, '')
+          .replace(/^where's\s+(my\s+|the\s+|a\s+)?/, '')
+          .replace(/^locate\s+(my\s+|the\s+|a\s+)?/, '')
+          .trim();
+        target = target.replace(/[.?]+$/, '');
+        document.getElementById('findInput').value = target || 'bottle';
+        submitFindObject();
+        return;
+      }
+
+      if (text === 'look' || text.includes("what is in front") || text.includes("what's in front") || text.includes("what's around") || text.includes("what is around") || text.includes("describe surroundings") || text.includes("describe scene")) {
+        runLookMode();
+        return;
+      }
+
+      // Default to visual QA
+      document.getElementById('askInput').value = rawText;
+      submitAskQuestion();
+    }
+
+    // Voice Input via Web Speech API
     function startVoiceInput() {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SpeechRecognition) {
-        speak('Speech recognition is not supported in this browser. Please use the buttons.');
+        speak('Speech recognition is not supported in this browser. Please tap the mode buttons.');
         return;
       }
       const recognizer = new SpeechRecognition();
@@ -1121,28 +1337,13 @@
       speak('Listening.');
 
       recognizer.onresult = (e) => {
-        const text = e.results[0][0].transcript.toLowerCase();
-        console.log('Spoken command:', text);
-        if (text.includes('start assistance')) {
-          if (!isContinuousAssistance) toggleAssistance();
-        } else if (text.includes('stop assistance')) {
-          if (isContinuousAssistance) toggleAssistance();
-        } else if (text.includes('read')) {
-          runReadMode();
-        } else if (text.includes('find')) {
-          const target = text.replace('find my', '').replace('find', '').trim();
-          document.getElementById('findInput').value = target || 'bottle';
-          submitFindObject();
-        } else if (text.includes('look') || text.includes("what's around")) {
-          runLookMode();
-        } else {
-          document.getElementById('askInput').value = text;
-          submitAskQuestion();
-        }
+        const text = e.results[0][0].transcript;
+        handleVoiceCommand(text);
       };
-      recognizer.onerror = () => {
+      recognizer.onerror = (e) => {
+        console.warn('Speech recognition error:', e);
         setState('IDLE');
-        speak("I didn't catch that.");
+        speak("I didn't catch that. Say look, find, read, or repeat.");
       };
       recognizer.onend = () => {
         if (stateText.textContent === 'LISTENING') setState('IDLE');
@@ -1150,9 +1351,23 @@
       recognizer.start();
     }
 
-    // Try auto-initializing camera on page load
+    // Service Worker Registration
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch((err) => {
+          console.log('Service Worker registration skipped or failed:', err);
+        });
+      });
+    }
+
+    // Auto-greeting & camera start on page load
     window.addEventListener('DOMContentLoaded', () => {
       initCamera();
+      
+      // Spoken greeting on launch
+      setTimeout(() => {
+        speakAndSave("Vision assistant ready. How can I help?");
+      }, 700);
     });
   </script>
 </body>

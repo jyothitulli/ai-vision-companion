@@ -104,3 +104,36 @@ async def app_view():
     if index_path.is_file():
         return FileResponse(index_path)
     return JSONResponse(status_code=404, content={"error": "Web UI not found"})
+
+
+@app.get("/manifest.json")
+async def manifest_view():
+    manifest_path = STATIC_DIR / "manifest.json"
+    if manifest_path.is_file():
+        return FileResponse(manifest_path, media_type="application/manifest+json")
+    return JSONResponse(status_code=404, content={"error": "Manifest not found"})
+
+
+@app.get("/sw.js")
+async def service_worker_view():
+    sw_path = STATIC_DIR / "sw.js"
+    if sw_path.is_file():
+        return FileResponse(sw_path, media_type="application/javascript")
+    return JSONResponse(status_code=404, content={"error": "Service worker not found"})
+
+
+@app.get("/icon-192.png")
+async def icon_192_view():
+    icon_path = STATIC_DIR / "icon-192.png"
+    if icon_path.is_file():
+        return FileResponse(icon_path, media_type="image/png")
+    return JSONResponse(status_code=404, content={"error": "Icon not found"})
+
+
+@app.get("/icon-512.png")
+async def icon_512_view():
+    icon_path = STATIC_DIR / "icon-512.png"
+    if icon_path.is_file():
+        return FileResponse(icon_path, media_type="image/png")
+    return JSONResponse(status_code=404, content={"error": "Icon not found"})
+
