@@ -7,6 +7,8 @@ ENV OMP_NUM_THREADS=1 \
     OPENBLAS_NUM_THREADS=1 \
     VECLIB_MAXIMUM_THREADS=1 \
     NUMEXPR_NUM_THREADS=1 \
+    MALLOC_ARENA_MAX=2 \
+    YOLO_CONFIG_DIR=/tmp/Ultralytics \
     PYTHONPATH=/app
 
 COPY requirements.txt /app/requirements.txt

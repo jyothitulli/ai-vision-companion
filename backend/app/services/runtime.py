@@ -39,13 +39,11 @@ def warmup() -> None:
     try:
         pipeline = get_pipeline()
         import numpy as np
-        dummy = np.zeros((480, 480, 3), dtype=np.uint8)
+        dummy = np.zeros((320, 320, 3), dtype=np.uint8)
         pipeline.runtime.detector.detect(dummy)
         logger.info("vision_pipeline_ready")
+        import gc
+        gc.collect()
     except Exception:
         logger.exception("vision_pipeline_warmup_failed")
-    try:
-        get_speech()
-        logger.info("speech_ready")
-    except Exception:
-        logger.exception("speech_warmup_failed")
+
