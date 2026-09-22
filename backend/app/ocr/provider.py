@@ -99,11 +99,16 @@ def structure_ocr(full_text: str, lines: list[OCRLine]) -> dict:
 
 def build_ocr_provider() -> OCRProvider:
     try:
-        provider = PaddleOCRProvider()
-        logger.info("ocr_provider", extra={"impl": "paddleocr"})
-        return provider
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("paddleocr_unavailable", extra={"error": str(exc)})
         provider = RapidOCRProvider()
         logger.info("ocr_provider", extra={"impl": "rapidocr"})
         return provider
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("rapidocr_unavailable", extra={"error": str(exc)})
+        try:
+            provider = PaddleOCRProvider()
+            logger.info("ocr_provider", extra={"impl": "paddleocr"})
+            return provider
+        except Exception as exc2:  # noqa: BLE001
+            logger.warning("paddleocr_unavailable", extra={"error": str(exc2)})
+            raise
+

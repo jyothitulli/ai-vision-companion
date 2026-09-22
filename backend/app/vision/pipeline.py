@@ -200,6 +200,13 @@ class VisionPipeline:
         ocr_doc: OCRDocument | None = None
         if intent.mode == "read":
             if self.runtime.ocr is None:
+                try:
+                    from app.ocr.provider import build_ocr_provider
+                    self.runtime.ocr = build_ocr_provider()
+                except Exception:
+                    pass
+
+            if self.runtime.ocr is None:
                 warnings.append("ocr_unavailable")
                 answer = "I couldn't read the text. The OCR engine is unavailable."
             else:
